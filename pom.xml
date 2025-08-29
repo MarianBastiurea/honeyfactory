@@ -86,6 +86,27 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- AWS SDK v2 core -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+            <version>2.25.65</version> <!-- sau ultima versiune stabilă -->
+        </dependency>
+
+        <!-- DynamoDB Enhanced Client -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb-enhanced</artifactId>
+            <version>2.25.65</version>
+        </dependency>
+
+        <!-- Jackson (de obicei necesar pentru mapări) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+
     </dependencies>
 
     <build>
