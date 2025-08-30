@@ -205,4 +205,25 @@ public class AllocationPlan {
                 ", lines=" + lines +
                 '}';
     }
+
+    public static AllocationPlan of(String orderId,
+                                    Map<HoneyType, BigDecimal> requested,
+                                    List<AllocationLine> lines) {
+        return new AllocationPlan(
+                UUID.randomUUID(),
+                Objects.requireNonNull(orderId, "orderId"),
+                Instant.now(),
+                requested,
+                lines,
+                PlanStatus.DRAFT
+        );
+    }
+
+    /** Alias semantic: când ai deja liniile calculate. */
+    public static AllocationPlan fromComputedLines(String orderId,
+                                                   Map<HoneyType, BigDecimal> requested,
+                                                   List<AllocationLine> lines) {
+        return of(orderId, requested, lines);
+    }
+
 }
