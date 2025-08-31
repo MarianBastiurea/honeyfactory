@@ -1,13 +1,15 @@
 package com.marianbastiurea.api.controller;
 
 import com.marianbastiurea.api.dto.request.PlaceOrderRequest;
-import com.marianbastiurea.domain.model.Order;
 import com.marianbastiurea.domain.enums.HoneyType;
+import com.marianbastiurea.domain.model.Order;
 import com.marianbastiurea.domain.services.OrderService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 
 import java.util.List;
 import java.util.Optional;
@@ -16,38 +18,86 @@ import java.util.Optional;
 @RequestMapping("/api/orders")
 public class OrderController {
 
-    private final OrderService orderService; // service-ul tău de aplicație
+    private static final Logger log = LoggerFactory.getLogger(OrderController.class);
+
+    private final OrderService orderService;
 
     public OrderController(OrderService orderService) {
         this.orderService = orderService;
     }
 
-    // === Create (DTO in, Domain out) ===
+
     @PostMapping
     public ResponseEntity<Order> create(@RequestBody PlaceOrderRequest req) {
-        Order created = orderService.create(req); // service-ul setează orderNumber
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        log.info("order.create.request honeyType={} jarQuantities={}", req.honeyType(), req.jarQuantities());
+        try {
+            Order created = orderService.create(req);
+            MDC.put("orderNumber", String.valueOf(created.orderNumber()));
+            log.info("order.create.success");
+            if (log.isDebugEnabled()) {
+                log.debug("order.create.payload result={}", created);
+            }
+            return ResponseEntity.status(HttpStatus.CREATED).body(created);
+        } catch (Exception e) {
+            log.error("order.create.failure", e);
+            throw e;
+        } finally {
+            MDC.remove("orderNumber");
+        }
     }
 
     // === Read by orderNumber ===
     @GetMapping("/number/{orderNumber}")
     public ResponseEntity<Order> getByOrderNumber(@PathVariable Integer orderNumber) {
-        Optional<Order> found = orderService.findByOrderNumber(orderNumber);
-        return found.map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        MDC.put("orderNumber", String.valueOf(orderNumber));
+        log.info("order.get.request");
+        try {
+            Optional<Order> found = orderService.findByOrderNumber(orderNumber);
+            if (found.isPresent()) {
+                log.info("order.get.found");
+                if (log.isDebugEnabled()) log.debug("order.get.payload result={}", found.get());
+                return ResponseEntity.ok(found.get());
+            } else {
+                log.info("order.get.not_found");
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            log.error("order.get.failure", e);
+            throw e;
+        } finally {
+            MDC.remove("orderNumber");
+        }
     }
 
-    // === Query by honey type ===
+
     @GetMapping("/honey/{honeyType}")
     public ResponseEntity<List<Order>> findByHoneyType(@PathVariable HoneyType honeyType) {
-        return ResponseEntity.ok(orderService.findByHoneyType(honeyType));
+        log.info("order.search_by_honey.request honeyType={}", honeyType);
+        try {
+            List<Order> result = orderService.findByHoneyType(honeyType);
+            log.info("order.search_by_honey.success size={}", result.size());
+            if (log.isDebugEnabled()) log.debug("order.search_by_honey.payload result={}", result);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("order.search_by_honey.failure honeyType={}", honeyType, e);
+            throw e;
+        }
     }
 
-    // === Delete by orderNumber ===
+
     @DeleteMapping("/number/{orderNumber}")
     public ResponseEntity<Void> deleteByOrderNumber(@PathVariable Integer orderNumber) {
-        orderService.deleteByOrderNumber(orderNumber);
-        return ResponseEntity.noContent().build();
+        MDC.put("orderNumber", String.valueOf(orderNumber));
+        log.info("order.delete.request");
+        try {
+            orderService.deleteByOrderNumber(orderNumber);
+            log.info("order.delete.success");
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            log.error("order.delete.failure", e);
+            throw e;
+        } finally {
+            MDC.remove("orderNumber");
+        }
     }
-
 }

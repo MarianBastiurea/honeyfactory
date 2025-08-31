@@ -1,4 +1,4 @@
-package com.marianbastiurea.domain.ports.repository;
+package com.marianbastiurea.domain.repository;
 
 import com.marianbastiurea.domain.model.OrderRecord;
 

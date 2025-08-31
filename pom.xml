@@ -135,7 +135,28 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
 
-        </plugins>
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <release>21</release>
+                        <compilerArgs>
+                            <arg>--enable-preview</arg>
+                            <arg>--add-modules</arg>
+                            <arg>jdk.incubator.concurrent</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.2.5</version>
+                    <configuration>
+                        <argLine>--enable-preview --add-modules jdk.incubator.concurrent</argLine>
+                    </configuration>
+                </plugin>
+            </plugins>
+
     </build>
 
 </project>
