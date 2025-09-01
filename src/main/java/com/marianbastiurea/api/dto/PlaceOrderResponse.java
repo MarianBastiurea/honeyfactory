@@ -1,4 +1,4 @@
-package com.marianbastiurea.api.dto.response;
+package com.marianbastiurea.api.dto;
 
 public record PlaceOrderResponse(
         boolean success,

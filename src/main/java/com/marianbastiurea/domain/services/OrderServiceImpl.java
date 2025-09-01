@@ -1,6 +1,6 @@
 package com.marianbastiurea.domain.services;
 
-import com.marianbastiurea.api.dto.request.PlaceOrderRequest;
+import com.marianbastiurea.api.dto.PlaceOrderRequest;
 import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.enums.JarType;
 import com.marianbastiurea.domain.model.Order;

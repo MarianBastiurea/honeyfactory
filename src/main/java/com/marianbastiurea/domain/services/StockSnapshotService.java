@@ -9,40 +9,44 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.concurrent.Future;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.ThreadFactory;
+
+
 
 @Service
 public class StockSnapshotService {
 
-    private final HoneyRepo honeyRepo;
-    private final JarRepo jarRepo;
-    private final LabelRepo labelRepo;
-    private final CrateRepo crateRepo;
-    private final ThreadFactory taskThreadFactory; // VT in producție, PT la test dacă setezi proprietatea
+    private final HoneyRepo honey;
+    private final JarRepo jars;
+    private final LabelRepo labels;
+    private final CrateRepo crates;
+    private final ThreadFactory tf; // VT în producție
 
-    public StockSnapshotService(HoneyRepo honeyRepo,
-                                JarRepo jarRepo,
-                                LabelRepo labelRepo,
-                                CrateRepo crateRepo,
+    public StockSnapshotService(HoneyRepo honey,
+                                JarRepo jars,
+                                LabelRepo labels,
+                                CrateRepo crates,
                                 @Qualifier("taskThreadFactory") ThreadFactory taskThreadFactory) {
-        this.honeyRepo = honeyRepo;
-        this.jarRepo = jarRepo;
-        this.labelRepo = labelRepo;
-        this.crateRepo = crateRepo;
-        this.taskThreadFactory = taskThreadFactory;
+        this.honey = honey;
+        this.jars = jars;
+        this.labels = labels;
+        this.crates = crates;
+        this.tf = taskThreadFactory;
     }
 
+    /** Întoarce kg alocabile limitate de {miere, borcane, etichete, lăzi}. */
     public BigDecimal computeAllocatableKg(Order order) throws Exception {
-        try (var scope = new StructuredTaskScope.ShutdownOnFailure(taskThreadFactory)) {
-            Future<BigDecimal> honey  = scope.fork(() -> honeyRepo.freeKg(order.honeyType()));
-            Future<BigDecimal> jars   = scope.fork(() -> jarRepo.freeAsKg(order.jarQuantities(), order.honeyType()));
-            Future<BigDecimal> labels = scope.fork(() -> labelRepo.freeAsKg(order.jarQuantities(), order.honeyType()));
-            Future<BigDecimal> crates = scope.fork(() -> crateRepo.freeAsKg(order.jarQuantities(), order.honeyType()));
+        try (var scope = new StructuredTaskScope<BigDecimal>("alloc-scope", tf)) {
+            var tHoney  = scope.fork(() -> honey.freeKg(order.honeyType()));
+            var tJars   = scope.fork(() -> jars.freeAsKg(order.jarQuantities(), order.honeyType()));
+            var tLabels = scope.fork(() -> labels.freeAsKg(order.jarQuantities(), order.honeyType()));
+            var tCrates = scope.fork(() -> crates.freeAsKg(order.jarQuantities(), order.honeyType()));
 
-            scope.join().throwIfFailed();
-            return min(honey.resultNow(), jars.resultNow(), labels.resultNow(), crates.resultNow());
+            scope.join(); // așteaptă toate
+
+            // Dacă vreun task a aruncat, get() va arunca ExecutionException.
+            return min(tHoney.get(), tJars.get(), tLabels.get(), tCrates.get());
         }
     }
 
@@ -52,4 +56,3 @@ public class StockSnapshotService {
         return m.max(BigDecimal.ZERO);
     }
 }
-

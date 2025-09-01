@@ -1,4 +1,4 @@
-package com.marianbastiurea.api.dto.request;
+package com.marianbastiurea.api.dto;
 
 import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.enums.JarType;

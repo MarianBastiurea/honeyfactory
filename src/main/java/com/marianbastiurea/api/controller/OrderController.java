@@ -1,9 +1,10 @@
 package com.marianbastiurea.api.controller;
 
-import com.marianbastiurea.api.dto.request.PlaceOrderRequest;
+import com.marianbastiurea.api.dto.PlaceOrderRequest;
 import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.model.Order;
 import com.marianbastiurea.domain.services.OrderService;
+import com.marianbastiurea.domain.services.StockSnapshotService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -11,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,11 +23,12 @@ public class OrderController {
     private static final Logger log = LoggerFactory.getLogger(OrderController.class);
 
     private final OrderService orderService;
+    private final StockSnapshotService snapshot;
 
-    public OrderController(OrderService orderService) {
+    public OrderController(OrderService orderService, StockSnapshotService snapshot) {
         this.orderService = orderService;
+        this.snapshot = snapshot;
     }
-
 
     @PostMapping
     public ResponseEntity<Order> create(@RequestBody PlaceOrderRequest req) {
@@ -99,5 +102,11 @@ public class OrderController {
         } finally {
             MDC.remove("orderNumber");
         }
+    }
+
+    @PostMapping("/check")
+    public ResponseEntity<BigDecimal> check(@RequestBody Order order) throws Exception {
+        // verifi că RDS-urile răspund și vezi limita de alocare direct din DB
+        return ResponseEntity.ok(snapshot.computeAllocatableKg(order));
     }
 }

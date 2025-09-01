@@ -1,96 +1,109 @@
 package com.marianbastiurea.config;
 
 import com.zaxxer.hikari.HikariDataSource;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.context.annotation.*;
+import org.springframework.context.annotation.Primary;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import javax.sql.DataSource;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class MultiRdsConfig {
 
-    @Bean
+    // -------- Honey (6) --------
+    @Bean(name = "acaciaDs")
     @ConfigurationProperties("rds.acacia")
     public HikariDataSource acaciaDs() { return new HikariDataSource(); }
 
-    @Bean("acaciaTpl")
-    public NamedParameterJdbcTemplate acaciaTpl(DataSource acaciaDs) {
-        return new NamedParameterJdbcTemplate(acaciaDs);
+    @Bean(name = "acaciaTpl")
+    public NamedParameterJdbcTemplate acaciaTpl(@Qualifier("acaciaDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-    @Bean
+    @Bean(name = "rapeseedDs")
     @ConfigurationProperties("rds.rapeseed")
     public HikariDataSource rapeseedDs() { return new HikariDataSource(); }
 
-    @Bean("rapeseedTpl")
-    public NamedParameterJdbcTemplate rapeseedTpl(DataSource rapeseedDs) {
-        return new NamedParameterJdbcTemplate(rapeseedDs);
+    @Bean(name = "rapeseedTpl")
+    public NamedParameterJdbcTemplate rapeseedTpl(@Qualifier("rapeseedDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-    @Bean
+    @Bean(name = "lindenDs")
     @ConfigurationProperties("rds.linden")
     public HikariDataSource lindenDs() { return new HikariDataSource(); }
 
-    @Bean("lindenTpl")
-    public NamedParameterJdbcTemplate lindenTpl(DataSource lindenDs) {
-        return new NamedParameterJdbcTemplate(lindenDs);
+    @Bean(name = "lindenTpl")
+    public NamedParameterJdbcTemplate lindenTpl(@Qualifier("lindenDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-    @Bean
+    @Bean(name = "sunflowerDs")
     @ConfigurationProperties("rds.sunflower")
     public HikariDataSource sunflowerDs() { return new HikariDataSource(); }
 
-    @Bean("sunflowerTpl")
-    public NamedParameterJdbcTemplate sunflowerTpl(DataSource sunflowerDs) {
-        return new NamedParameterJdbcTemplate(sunflowerDs);
+    @Bean(name = "sunflowerTpl")
+    public NamedParameterJdbcTemplate sunflowerTpl(@Qualifier("sunflowerDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-    @Bean
+    @Bean(name = "wildflowerDs")
     @ConfigurationProperties("rds.wildflower")
-    public HikariDataSource wildlowerDs() { return new HikariDataSource(); }
+    public HikariDataSource wildflowerDs() { return new HikariDataSource(); }
 
-    @Bean("wildflowerTpl")
-    public NamedParameterJdbcTemplate wildflowerTpl(DataSource wildflowerDs) {
-        return new NamedParameterJdbcTemplate(wildflowerDs);
+    @Bean(name = "wildflowerTpl")
+    public NamedParameterJdbcTemplate wildflowerTpl(@Qualifier("wildflowerDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
-    @Bean
+
+    @Bean(name = "falseindigoDs")
     @ConfigurationProperties("rds.falseindigo")
     public HikariDataSource falseindigoDs() { return new HikariDataSource(); }
 
-    @Bean("falseindigoTpl")
-    public NamedParameterJdbcTemplate falseindigoTpl(DataSource sunflowerDs) {
-        return new NamedParameterJdbcTemplate(sunflowerDs);
+    @Bean(name = "falseindigoTpl")
+    public NamedParameterJdbcTemplate falseindigoTpl(@Qualifier("falseindigoDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-
-    @Bean
+    // -------- Resources (3) --------
+    @Bean(name = "jarsDs")
     @ConfigurationProperties("rds.jars")
     public HikariDataSource jarsDs() { return new HikariDataSource(); }
 
-    @Bean("jarsTpl")
-    public NamedParameterJdbcTemplate jarsTpl(DataSource jarsDs) {
-        return new NamedParameterJdbcTemplate(jarsDs);
+    @Bean(name = "jarsTpl")
+    public NamedParameterJdbcTemplate jarsTpl(@Qualifier("jarsDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-
-    @Bean
+    @Bean(name = "labelsDs")
     @ConfigurationProperties("rds.labels")
     public HikariDataSource labelsDs() { return new HikariDataSource(); }
 
-    @Bean("labelsTpl")
-    public NamedParameterJdbcTemplate labelsTpl(DataSource labelsDs) {
-        return new NamedParameterJdbcTemplate(labelsDs);
+    @Bean(name = "labelsTpl")
+    public NamedParameterJdbcTemplate labelsTpl(@Qualifier("labelsDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
-
-    @Bean
+    @Bean(name = "cratesDs")
     @ConfigurationProperties("rds.crates")
     public HikariDataSource cratesDs() { return new HikariDataSource(); }
 
-    @Bean("cratesTpl")
-    public NamedParameterJdbcTemplate cratesTpl(DataSource cratesDs) {
-        return new NamedParameterJdbcTemplate(cratesDs);
+    @Bean(name = "cratesTpl")
+    public NamedParameterJdbcTemplate cratesTpl(@Qualifier("cratesDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
     }
 
+    // -------- Orders (1) --------
+    @Primary
+    @Bean(name = "ordersDs")
+    @ConfigurationProperties("rds.orders")
+    public HikariDataSource ordersDs() { return new HikariDataSource(); }
+
+    @Bean(name = "ordersTpl")
+    public NamedParameterJdbcTemplate ordersTpl(@Qualifier("ordersDs") DataSource ds) {
+        return new NamedParameterJdbcTemplate(ds);
+    }
 }
