@@ -106,7 +106,7 @@ public class OrderController {
 
     @PostMapping("/check")
     public ResponseEntity<BigDecimal> check(@RequestBody Order order) throws Exception {
-        // verifi că RDS-urile răspund și vezi limita de alocare direct din DB
+
         return ResponseEntity.ok(snapshot.computeAllocatableKg(order));
     }
 }

@@ -8,7 +8,7 @@ import jakarta.persistence.*;
 import java.util.HashMap;
 import java.util.Map;
 
-// ... restul importurilor și anotațiilor
+
 @Entity
 @Table(name = "orders")
 public class OrderEntity {
@@ -25,10 +25,9 @@ public class OrderEntity {
     @Column(name = "jar_quantities", nullable = false, columnDefinition = "TEXT")
     private Map<JarType, Integer> jarQuantities = new HashMap<>();
 
-    // trebuie să rămână fără-args pentru JPA; e ok să fie protected
+
     protected OrderEntity() {}
 
-    // ▲ Factory public – îl vei apela din service
     public static OrderEntity of(Integer orderNumber,
                                  HoneyType honeyType,
                                  Map<JarType, Integer> jarQuantities) {
