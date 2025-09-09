@@ -5,26 +5,18 @@ import com.marianbastiurea.domain.model.AllocationLine;
 import com.marianbastiurea.domain.model.AllocationPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 
-/**
- * Alocare simplă (greedy) din stocurile magaziilor, în ordinea primită.
- * Nu face rezervări, nu are retry, doar calculează liniile de alocare.
- */
+@Service
 public class AllocationPlanner {
 
     private static final Logger log = LoggerFactory.getLogger(AllocationPlanner.class);
 
-    /**
-     * @param requestedByType  cererea pe tipuri (kg) – ex: {ACACIA=1500, LINDEN=700}
-     * @param stockByWarehouse stocul per magazie și tip – ex:
-     *                         { "WH-A" -> {ACACIA=1000, LINDEN=400},
-     *                           "WH-B" -> {ACACIA=900,  LINDEN=500} }
-     *                         Folosește LinkedHashMap ca să păstrezi ordinea magaziilor.
-     */
+
     public AllocationPlan planGreedy(
             int orderNumber,
             Map<HoneyType, BigDecimal> requestedByType,

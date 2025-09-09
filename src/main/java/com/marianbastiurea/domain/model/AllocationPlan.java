@@ -14,11 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * Plan de alocare pentru MIERE (kg) la nivel de comandă (orderNumber).
- * - Calculează bottleneck-ul dintre miere/borcane/etichete/lăzi
- * - Creează alocarea de miere (AllocationLine) și pick-lists (PrepCommand) către RDS-uri.
- */
+
 public class AllocationPlan {
 
     private static final Logger log = LoggerFactory.getLogger(AllocationPlan.class);

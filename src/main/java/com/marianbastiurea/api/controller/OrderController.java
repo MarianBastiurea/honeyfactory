@@ -109,4 +109,13 @@ public class OrderController {
 
         return ResponseEntity.ok(snapshot.computeAllocatableKg(order));
     }
+
+    @GetMapping("/number/{orderNumber}/honey/{honeyType}")
+    public ResponseEntity<Order> getByNumberAndHoney(@PathVariable Integer orderNumber,
+                                                     @PathVariable HoneyType honeyType) {
+        return orderService.findByOrderNumberAndHoneyType(orderNumber, honeyType)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
 }
