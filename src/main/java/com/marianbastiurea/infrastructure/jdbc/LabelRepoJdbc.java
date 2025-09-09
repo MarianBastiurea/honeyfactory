@@ -3,20 +3,16 @@ package com.marianbastiurea.infrastructure.jdbc;
 import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.enums.JarType;
 import com.marianbastiurea.domain.repo.LabelRepo;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.util.EnumMap;
 import java.util.Map;
 
-@Repository
 public class LabelRepoJdbc implements LabelRepo {
     private final NamedParameterJdbcTemplate tpl;
 
-    public LabelRepoJdbc(@Qualifier("labelsTpl") NamedParameterJdbcTemplate tpl) { this.tpl = tpl; }
-
+    public LabelRepoJdbc(NamedParameterJdbcTemplate tpl) { this.tpl = tpl; }
 
     @Override
     public BigDecimal freeAsKg(Map<JarType, Integer> requestedJars, HoneyType honeyType) {

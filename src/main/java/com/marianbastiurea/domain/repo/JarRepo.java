@@ -6,5 +6,6 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 public interface JarRepo {
+    /** kg limitate de numărul de borcane disponibile pentru distribuția cerută. */
     BigDecimal freeAsKg(Map<JarType, Integer> requestedJars, HoneyType honeyType);
 }

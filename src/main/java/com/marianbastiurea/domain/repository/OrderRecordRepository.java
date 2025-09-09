@@ -11,3 +11,4 @@ public interface OrderRecordRepository {
     List<OrderRecord> findByStatus(String status);
     void deleteById(String id);
 }
+

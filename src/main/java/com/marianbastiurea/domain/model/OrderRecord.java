@@ -1,19 +1,5 @@
 package com.marianbastiurea.domain.model;
 
-import com.marianbastiurea.domain.enums.HoneyType;
-import com.marianbastiurea.domain.enums.JarType;
-
-import java.time.Instant;
-import java.util.Map;
-
-public record OrderRecord(
-        String id,
-        Integer orderNumber,
-        HoneyType honeyType,
-        Map<JarType, Integer> jarQuantities,
-        Instant executedAt,
-        Status status,
-        String note
-) {
+public record OrderRecord(String orderId, Status status, java.time.Instant createdAt) {
     public enum Status { NEW, PROCESSING, DONE, CANCELED }
 }

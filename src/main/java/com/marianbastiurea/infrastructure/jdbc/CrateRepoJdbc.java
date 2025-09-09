@@ -3,20 +3,22 @@ package com.marianbastiurea.infrastructure.jdbc;
 import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.enums.JarType;
 import com.marianbastiurea.domain.repo.CrateRepo;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.util.EnumMap;
 import java.util.Map;
 
+/**
+ * Simplu: crate_stock(jar_type TEXT, slot_capacity INT, available_slots INT).
+ * kg = sum(min(requestedJars, slot_capacity*available_slots) * jarKg)
+ */
 
 
-@Repository
 public class CrateRepoJdbc implements CrateRepo {
     private final NamedParameterJdbcTemplate tpl;
-    public CrateRepoJdbc(@Qualifier("cratesTpl") NamedParameterJdbcTemplate tpl) { this.tpl = tpl; }
+
+    public CrateRepoJdbc(NamedParameterJdbcTemplate tpl) { this.tpl = tpl; }
 
     @Override
     public BigDecimal freeAsKg(Map<JarType, Integer> requestedJars, HoneyType honeyType) {

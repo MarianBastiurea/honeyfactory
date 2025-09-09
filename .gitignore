@@ -52,8 +52,3 @@ build/
 # J2ME
 # -------------------------------------
 .mtj.tmp/
-**/application*.properties
-**/application*.yml
-**/bootstrap*.properties
-**/bootstrap*.yml
-.env

@@ -8,17 +8,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface OrderService {
-
-    Order create(PlaceOrderRequest req);
-
-
+    Order create(PlaceOrderRequest req);                  // <— primește DTO, generează orderNumber
     Optional<Order> findByOrderNumber(Integer orderNumber);
-
-
-    Optional<Order> findByOrderNumberAndHoneyType(Integer orderNumber, HoneyType honeyType);
-
     List<Order> findByHoneyType(HoneyType honeyType);
-
     void deleteByOrderNumber(Integer orderNumber);
 }
-
