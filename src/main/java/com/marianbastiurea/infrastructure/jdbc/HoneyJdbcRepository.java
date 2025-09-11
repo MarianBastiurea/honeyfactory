@@ -132,7 +132,6 @@ public class HoneyJdbcRepository implements HoneyRepo {
                 );
 
                 if (updated == 0) {
-                    // optimistic-lock collision
                     status.setRollbackOnly();
                     return null;
                 }
@@ -168,7 +167,6 @@ public class HoneyJdbcRepository implements HoneyRepo {
         throw new IllegalStateException("Concurrent stock update, retry limit reached for " + type);
     }
 
-    // ---- little reflective helper for nicer DS logs without hard deps on Hikari ----
     private static String tryReflect(Object target, String getter) {
         try {
             var m = target.getClass().getMethod(getter);

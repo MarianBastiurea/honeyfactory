@@ -13,7 +13,6 @@ import javax.sql.DataSource;
 @Configuration(proxyBeanMethods = false)
 public class MultiRdsConfig {
 
-    // -------- Honey (6) --------
     @Bean(name = "acaciaDs")
     @ConfigurationProperties("rds.acacia")
     public HikariDataSource acaciaDs() { return new HikariDataSource(); }
@@ -68,7 +67,6 @@ public class MultiRdsConfig {
         return new NamedParameterJdbcTemplate(ds);
     }
 
-    // -------- Resources (3) --------
     @Bean(name = "jarsDs")
     @ConfigurationProperties("rds.jars")
     public HikariDataSource jarsDs() { return new HikariDataSource(); }
@@ -96,7 +94,6 @@ public class MultiRdsConfig {
         return new NamedParameterJdbcTemplate(ds);
     }
 
-    // -------- Orders (1) --------
     @Primary
     @Bean(name = "ordersDs")
     @ConfigurationProperties("rds.orders")

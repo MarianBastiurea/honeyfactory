@@ -25,7 +25,7 @@ public class OrderRecordEntity {
 
     private static final Logger log = LoggerFactory.getLogger(OrderRecordEntity.class);
 
-    // --- Fields (atributul "pk" este cheia de partiție în tabel) ---
+
     private String pk;
     private Instant executedAt;
     private Integer orderNumber;
@@ -34,13 +34,13 @@ public class OrderRecordEntity {
     private String status; // String ca să fie GSI-friendly
     private String note;
 
-    // --- Cheia de partiție mapată ca "id" în cod, dar persistată în "pk" ---
+
     @DynamoDbPartitionKey
     @DynamoDbAttribute("pk")
     public String getId() { return pk; }
     public void setId(String id) { this.pk = id; }
 
-    // Alias moștenit pentru compatibilitate — ignorat de mapper ca să nu dubleze atributul
+
     @DynamoDbIgnore
     public String getPk() { return pk; }
     @DynamoDbIgnore
@@ -57,12 +57,12 @@ public class OrderRecordEntity {
     public Map<JarType,Integer> getJarQuantities(){ return jarQuantities; }
     public void setJarQuantities(Map<JarType,Integer> jarQuantities){ this.jarQuantities = jarQuantities; }
 
-    // GSI pentru orderNumber
+
     @DynamoDbSecondaryPartitionKey(indexNames = "order-index")
     public Integer getOrderNumber(){ return orderNumber; }
     public void setOrderNumber(Integer orderNumber){ this.orderNumber = orderNumber; }
 
-    // GSI pentru status
+
     @DynamoDbSecondaryPartitionKey(indexNames = "status-index")
     public String getStatus(){ return status; }
     public void setStatus(String status){ this.status = status; }
@@ -70,7 +70,7 @@ public class OrderRecordEntity {
     public String getNote(){ return note; }
     public void setNote(String note){ this.note = note; }
 
-    // ---------- Mapping domain <-> entity ----------
+
     public static OrderRecordEntity fromDomain(OrderRecord d) {
         Objects.requireNonNull(d, "order record domain must not be null");
         OrderRecordEntity e = new OrderRecordEntity();
@@ -115,7 +115,7 @@ public class OrderRecordEntity {
         return "ORD#" + orderNumber + "#" + honeyType.name();
     }
 
-    /** Converter pentru Map<JarType,Integer> — stocăm ca JSON string în DynamoDB. */
+
     public static class JarQuantitiesConverter implements AttributeConverter<Map<JarType,Integer>> {
         private static final ObjectMapper M = new ObjectMapper();
 
@@ -156,7 +156,6 @@ public class OrderRecordEntity {
         }
 
         @Override public EnhancedType<Map<JarType, Integer>> type() {
-            // Tipul Java al proprietății; valoarea în Dynamo este S (JSON)
             return (EnhancedType) EnhancedType.of(Map.class);
         }
 

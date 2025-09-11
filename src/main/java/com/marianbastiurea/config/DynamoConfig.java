@@ -26,7 +26,7 @@ public class DynamoConfig {
     }
 
     @Bean
-    public Region awsRegion(@Value("${aws.region:eu-west-2}") String region) {
+    public Region awsRegion(@Value("${aws.region:us-east-1}") String region) {
         Region resolved = Region.of(region);
         log.info("AWS region configured: {}", resolved);
         return resolved;

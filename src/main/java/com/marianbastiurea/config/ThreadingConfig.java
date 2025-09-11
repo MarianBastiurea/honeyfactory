@@ -22,7 +22,6 @@ public class ThreadingConfig {
 
         ThreadFactory factory = Thread.ofVirtual().name(namePrefix, 0).factory();
 
-        // Probe: construim un thread (nu-l pornim) ca să logăm dacă e virtual + numele
         try {
             Thread probe = factory.newThread(() -> {});
             log.debug("Virtual Thread probe -> isVirtual={}, name='{}'",

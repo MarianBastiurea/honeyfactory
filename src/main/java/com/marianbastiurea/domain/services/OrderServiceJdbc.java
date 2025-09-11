@@ -123,7 +123,6 @@ public class OrderServiceJdbc implements OrderService {
         }
     }
 
-    // ---- helpers ----
     private static int totalJars(Map<?, Integer> jars) {
         if (jars == null || jars.isEmpty()) return 0;
         return jars.values().stream().filter(Objects::nonNull).mapToInt(Integer::intValue).sum();

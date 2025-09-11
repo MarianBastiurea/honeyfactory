@@ -41,10 +41,6 @@ public class StockSnapshotService {
         this.tf = requireNonNull(tf, "tf");
     }
 
-    /**
-     * Calculează cantitatea alocabilă (kg) limitată de: miere, borcane, etichete, lăzi.
-     * Rulează măsurătorile în paralel (fire virtuale) și face fail-fast la orice excepție.
-     */
     public BigDecimal computeAllocatableKg(Order order) throws Exception {
         requireNonNull(order, "order");
         log.info("[alloc] Start computeAllocatableKg for order#{} [{}] with jars={}",
@@ -52,15 +48,13 @@ public class StockSnapshotService {
 
         long t0 = System.nanoTime();
 
-        // Fail-fast dacă un subtask eșuează; folosim factory-ul de VT
         try (var scope = new StructuredTaskScope.ShutdownOnFailure("alloc-scope", tf)) {
-
             var tHoney  = scope.fork(() -> timedHoney(order));
             var tJars   = scope.fork(() -> timedJars(order));
             var tLabels = scope.fork(() -> timedLabels(order));
             var tCrates = scope.fork(() -> timedCrates(order));
 
-            scope.join().throwIfFailed(); // propagă excepția primei task-uri eșuate
+            scope.join().throwIfFailed();
 
             BigDecimal honeyKg  = nonNeg(tHoney.get());
             BigDecimal jarsKg   = nonNeg(tJars.get());
@@ -81,7 +75,6 @@ public class StockSnapshotService {
         }
     }
 
-    // ---- subtasks cronometrate ----
 
     private BigDecimal timedHoney(Order order) {
         long t = System.nanoTime();
@@ -100,7 +93,7 @@ public class StockSnapshotService {
         long t = System.nanoTime();
         try {
             BigDecimal v = jars.freeAsKg(order.jarQuantities(), order.honeyType());
-            log.debug("[alloc.jars] freeAsKg({}, {}) -> {} kg ({} ms)",
+            log.debug("[alloc.jars] freeAsKg(jars={}, honey={}) -> {} kg ({} ms)",
                     order.jarQuantities(), order.honeyType(), v, (System.nanoTime() - t) / 1_000_000);
             return v;
         } catch (Exception ex) {
@@ -112,9 +105,9 @@ public class StockSnapshotService {
     private BigDecimal timedLabels(Order order) {
         long t = System.nanoTime();
         try {
-            BigDecimal v = labels.freeAsKg(order.jarQuantities(), order.honeyType());
-            log.debug("[alloc.labels] freeAsKg({}, {}) -> {} kg ({} ms)",
-                    order.jarQuantities(), order.honeyType(), v, (System.nanoTime() - t) / 1_000_000);
+            BigDecimal v = labels.freeAsKg(order.jarQuantities());
+            log.debug("[alloc.labels] freeAsKg(jars={}) -> {} kg ({} ms)",
+                    order.jarQuantities(), v, (System.nanoTime() - t) / 1_000_000);
             return v;
         } catch (Exception ex) {
             log.error("[alloc.labels] ERROR: {}", ex.getMessage(), ex);
@@ -125,9 +118,9 @@ public class StockSnapshotService {
     private BigDecimal timedCrates(Order order) {
         long t = System.nanoTime();
         try {
-            BigDecimal v = crates.freeAsKg(order.jarQuantities(), order.honeyType());
-            log.debug("[alloc.crates] freeAsKg({}, {}) -> {} kg ({} ms)",
-                    order.jarQuantities(), order.honeyType(), v, (System.nanoTime() - t) / 1_000_000);
+            BigDecimal v = crates.freeAsKg(order.jarQuantities());
+            log.debug("[alloc.crates] freeAsKg(jars={}) -> {} kg ({} ms)",
+                    order.jarQuantities(), v, (System.nanoTime() - t) / 1_000_000);
             return v;
         } catch (Exception ex) {
             log.error("[alloc.crates] ERROR: {}", ex.getMessage(), ex);
@@ -135,11 +128,9 @@ public class StockSnapshotService {
         }
     }
 
-    // ---- helpers ----
 
     private static BigDecimal nonNeg(BigDecimal v) {
-        if (v == null) return BigDecimal.ZERO;
-        return v.max(BigDecimal.ZERO);
+        return v == null ? BigDecimal.ZERO : v.max(BigDecimal.ZERO);
     }
 
     private static BigDecimal min(BigDecimal... v) {

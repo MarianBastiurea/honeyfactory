@@ -38,9 +38,7 @@ public class HoneyFactoryApplication {
                 Runtime.getRuntime().availableProcessors(), TimeZone.getDefault().getID());
     }
 
-    /**
-     * Rezumat rapid de config și mediu, util la debug.
-     */
+
     @Bean
     CommandLineRunner startupSummary(Environment env) {
         return args -> {
@@ -55,7 +53,7 @@ public class HoneyFactoryApplication {
 
     @Bean(destroyMethod = "close")
     public ExecutorService virtualExecutor(@Qualifier("vtThreadFactory") ThreadFactory taskThreadFactory) {
-        // probe thread (nu-l pornim) doar ca să confirmăm virtualitatea + numele
+
         try {
             Thread probe = taskThreadFactory.newThread(() -> {});
             log.debug("VT executor probe -> isVirtual={}, name='{}'", probe.isVirtual(), probe.getName());

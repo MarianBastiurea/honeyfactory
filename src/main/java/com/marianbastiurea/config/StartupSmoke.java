@@ -48,7 +48,7 @@ public class StartupSmoke {
             long t0 = System.nanoTime();
             int ok = 0, failed = 0;
 
-            // sort by bean name for deterministic logging
+
             for (var entry : new TreeMap<>(tpls).entrySet()) {
                 String name = entry.getKey();
                 NamedParameterJdbcTemplate tpl = entry.getValue();
@@ -96,7 +96,6 @@ public class StartupSmoke {
         try {
             ps.setQueryTimeout(timeoutSeconds);
         } catch (Exception ignored) {
-            // unii drivere ignoră/nu suportă timeout-ul per statement
         }
         return ps;
     }

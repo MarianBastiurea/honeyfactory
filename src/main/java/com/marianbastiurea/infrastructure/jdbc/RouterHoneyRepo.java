@@ -158,7 +158,7 @@ public class RouterHoneyRepo implements HoneyRepo {
         throw new IllegalStateException("Concurrent stock update, retry limit reached for " + type);
     }
 
-    // helper pentru loguri nice despre DataSource fără dependență directă pe Hikari
+
     private static String tryReflect(Object target, String getter) {
         try {
             var m = target.getClass().getMethod(getter);

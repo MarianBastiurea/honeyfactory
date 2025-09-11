@@ -50,7 +50,6 @@ public class OrderRepoJdbc implements OrderRepo {
 
     @Override
     public Optional<Order> findByOrderNumber(Integer orderNumber) {
-        // considerăm că un orderNumber are un singur honey_type; altfel -> Optional.empty()
         List<String> types = tpl.queryForList(
                 "SELECT DISTINCT honey_type FROM orders WHERE order_number = :ord",
                 Map.of("ord", orderNumber), String.class);
@@ -139,7 +138,6 @@ public class OrderRepoJdbc implements OrderRepo {
 
     @Override
     public boolean tryMarkProcessing(int orderNumber, HoneyType type) {
-        // locking/idempotency simplu: unică pe (order_number,honey_type)
         final String sql = """
             INSERT INTO processed_orders(order_number, honey_type)
             VALUES (:o, :t)

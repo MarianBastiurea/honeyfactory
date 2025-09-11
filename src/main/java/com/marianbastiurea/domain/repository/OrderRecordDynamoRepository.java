@@ -39,7 +39,6 @@ public class OrderRecordDynamoRepository implements OrderRecordRepository {
         this.tableName = Objects.requireNonNull(tableName, "tableName");
         this.statusIndexName = Objects.requireNonNull(statusIndexName, "statusIndexName");
         this.orderIndexName = Objects.requireNonNull(orderIndexName, "orderIndexName");
-
         this.table = enhancedClient.table(this.tableName, TableSchema.fromBean(OrderRecordEntity.class));
         this.statusIndex = table.index(this.statusIndexName);
         this.orderIndex  = table.index(this.orderIndexName);
@@ -57,7 +56,6 @@ public class OrderRecordDynamoRepository implements OrderRecordRepository {
         try {
             table.putItem(entity);
             long tookMs = (System.nanoTime() - t0) / 1_000_000;
-            // presupunem că există getId/getOrderNumber/getStatus pe entity
             log.info("Saved OrderRecord in '{}' (id={}, orderNo={}, status={}) in {} ms.",
                     tableName, entity.getId(), entity.getOrderNumber(), entity.getStatus(), tookMs);
             return entity.toDomain();

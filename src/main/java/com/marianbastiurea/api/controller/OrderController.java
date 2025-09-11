@@ -49,7 +49,6 @@ public class OrderController {
         }
     }
 
-    // === Read by orderNumber ===
     @GetMapping("/number/{orderNumber}")
     public ResponseEntity<Order> getByOrderNumber(@PathVariable Integer orderNumber) {
         MDC.put("orderNumber", String.valueOf(orderNumber));

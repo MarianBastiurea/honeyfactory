@@ -3,6 +3,8 @@ package com.marianbastiurea.config;
 import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.enums.JarType;
 import com.marianbastiurea.domain.model.Order;
+import com.marianbastiurea.domain.model.OrderRecord;
+import com.marianbastiurea.domain.repository.OrderRecordRepository;
 import com.marianbastiurea.domain.services.ReservationOrchestrator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,7 +29,8 @@ public class StartupRunnerConfig {
     @Bean
     @ConditionalOnProperty(name = "app.process-orders-on-startup", havingValue = "true", matchIfMissing = false)
     CommandLineRunner runOnce(ReservationOrchestrator orchestrator,
-                              @Qualifier("ordersTpl") NamedParameterJdbcTemplate ordersTpl) {
+                              @Qualifier("ordersTpl") NamedParameterJdbcTemplate ordersTpl,
+                              OrderRecordRepository orderRecords) {
         return args -> {
             log.info("Startup runner: processing orders from RDS is ENABLED (app.process-orders-on-startup=true).");
 
@@ -87,6 +91,22 @@ public class StartupRunnerConfig {
 
                     try {
                         var result = orchestrator.reserveFor(order);
+
+                        OrderRecord.Status status = result.success()
+                                ? OrderRecord.Status.RESERVED
+                                : OrderRecord.Status.FAILED;
+
+                        OrderRecord record = new OrderRecord(
+                                null,
+                                orderNumber,
+                                honey,
+                                jarQuantities,
+                                Instant.now(),
+                                status,
+                                result.message()
+                        );
+                        orderRecords.save(record);
+
                         if (result.success()) {
                             success++;
                             log.info("Order #{} [{}] RESERVED: {}", orderNumber, honey, result.message());
@@ -97,6 +117,20 @@ public class StartupRunnerConfig {
                     } catch (Exception ex) {
                         failed++;
                         log.error("Order #{} [{}] threw exception during reservation.", orderNumber, honey, ex);
+                        try {
+                            OrderRecord record = new OrderRecord(
+                                    null,
+                                    orderNumber,
+                                    honey,
+                                    jarQuantities,
+                                    Instant.now(),
+                                    OrderRecord.Status.FAILED,
+                                    "EXCEPTION: " + ex.getMessage()
+                            );
+                            orderRecords.save(record);
+                        } catch (Exception ignore) {
+                            log.warn("Could not persist FAILED record for order #{} [{}]: {}", orderNumber, honey, ignore.toString());
+                        }
                     }
                 }
             }

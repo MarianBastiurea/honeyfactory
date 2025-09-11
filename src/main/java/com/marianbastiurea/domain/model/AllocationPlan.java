@@ -22,10 +22,8 @@ public class AllocationPlan {
     private final Integer orderNumber;
     private final Instant createdAt;
 
-    // Cererea totală pe tip (kg). De regulă o singură cheie (honeyType din Order).
     private final Map<HoneyType, BigDecimal> requested;
 
-    // Liniile de alocare efective (sursa, tip, cantitate)
     private final List<AllocationLine> lines;
 
     private PlanStatus status;
@@ -94,7 +92,7 @@ public class AllocationPlan {
     public boolean isFullyAllocated() { return status == PlanStatus.FULLY_ALLOCATED; }
     public boolean isPartiallyAllocated() { return status == PlanStatus.PARTIALLY_ALLOCATED; }
 
-    /** Adaugă o alocare (kg) de miere către un warehouseKey (ex.: ACACIA-RDS). */
+
     public synchronized void allocateToWarehouse(HoneyType type, BigDecimal quantityKg, String warehouseKey, String note) {
         log.info("[allocateToWarehouse] TRY type={}, qtyKg={}, warehouseKey={}, note={}",
                 type, quantityKg, warehouseKey, note);
@@ -131,16 +129,7 @@ public class AllocationPlan {
         return g;
     }
 
-    // ================== PLANIFICARE ==================
 
-    /**
-     * MIN per JarType dintre: requested(borcane), jars stock, labels stock, crates capacity(în borcane),
-     * apoi limită GLOBALĂ de miere (kg). Emit:
-     *  - AllocationLine (kg) în warehouse-ul corect de miere (în funcție de HoneyType),
-     *  - PrepCommand pentru JARS/LABELS/CRATES.
-     *
-     * @param honeyWarehouseByType map cu cele 6 RDS, ex: ACACIA->"RDS-HONEY-ACACIA", ...
-     */
     public static PlanWithPrep planAndPrepareFromOrder(
             Order order,
             PackagingResources stock,
@@ -161,15 +150,12 @@ public class AllocationPlan {
                 order.orderNumber(), order.honeyType());
         log.debug("[planAndPrepareFromOrder] requestedJars={}", order.jarQuantities());
 
-        // 1) cererea (borcane pe tip)
         Map<JarType, Integer> requestedJars = new EnumMap<>(JarType.class);
         requestedJars.putAll(order.jarQuantities());
 
-        // 2) capacitatea în borcane determinată de lăzi
         Map<JarType, Integer> cratesCapacityByJarType = cratesCapacityAsJars(stock);
         log.debug("[planAndPrepareFromOrder] cratesCapacityByJarType(jars)={}", cratesCapacityByJarType);
 
-        // 3) MIN local per JarType
         Map<JarType, Integer> afterDiscreteMin = new EnumMap<>(JarType.class);
         for (Map.Entry<JarType, Integer> e : requestedJars.entrySet()) {
             JarType jt = e.getKey();
@@ -184,21 +170,19 @@ public class AllocationPlan {
                     jt, want, byJars, byLabels, byCrates, localMin);
         }
 
-        // 4) limită GLOBALĂ de miere (kg) pe HoneyType-ul comenzii
         BigDecimal honeyBudgetKg = stock.honeyFor(order.honeyType());
         log.info("[planAndPrepareFromOrder] honeyBudgetKg(type={})={}", order.honeyType(), honeyBudgetKg);
 
         Map<JarType, Integer> approved = applyHoneyLimitGreedy(afterDiscreteMin, honeyBudgetKg);
         log.debug("[planAndPrepareFromOrder] approvedJars={}", approved);
 
-        // 5) kg de miere folosite efectiv
         BigDecimal honeyUsed = approved.entrySet().stream()
                 .map(e -> e.getKey().kgPerJar().multiply(BigDecimal.valueOf(e.getValue())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         log.info("[planAndPrepareFromOrder] honeyUsedKg={}", honeyUsed);
 
-        // 6) Construiește AllocationPlan (kg de miere), alocă în RDS-ul corect după HoneyType
+
         Map<HoneyType, BigDecimal> reqKg = (honeyUsed.signum() > 0)
                 ? Map.of(order.honeyType(), honeyUsed)
                 : Map.of();
@@ -215,11 +199,11 @@ public class AllocationPlan {
             log.warn("[planAndPrepareFromOrder] honeyUsed=0 -> nicio alocare de miere.");
         }
 
-        // 7) Lăzi necesare (ceil)
+
         Map<CrateType, Integer> crateReservations = computeCrateReservations(approved);
         log.debug("[planAndPrepareFromOrder] crateReservations(crates)={}", crateReservations);
 
-        // 8) PrepCommand către RDS-urile discrete (JARS/LABELS/CRATES)
+
         List<PrepCommand> cmds = new ArrayList<>();
         for (Map.Entry<JarType, Integer> e : approved.entrySet()) {
             JarType jt = e.getKey(); int qty = e.getValue();
@@ -250,7 +234,6 @@ public class AllocationPlan {
         return result;
     }
 
-    /** Greedy pe limita globală de miere (kg) peste minimele locale. */
     private static Map<JarType, Integer> applyHoneyLimitGreedy(
             Map<JarType, Integer> candidateAfterLocalMin,
             BigDecimal honeyBudgetKg
@@ -297,7 +280,6 @@ public class AllocationPlan {
         return approved;
     }
 
-    /** Transformă aprobările (borcane) în număr de lăzi per CrateType (ceil). */
     private static Map<CrateType, Integer> computeCrateReservations(Map<JarType, Integer> approvedJars) {
         Map<CrateType, Integer> out = new EnumMap<>(CrateType.class);
         for (Map.Entry<JarType, Integer> e : approvedJars.entrySet()) {
@@ -320,7 +302,7 @@ public class AllocationPlan {
         return out;
     }
 
-    /** Convertește stocul de lăzi (CrateType->count) în capacitate de borcane pe JarType. */
+
     private static Map<JarType, Integer> cratesCapacityAsJars(PackagingResources stock) {
         Map<JarType, Integer> cap = new EnumMap<>(JarType.class);
         Map<CrateType, Integer> cratesByType = stock.cratesByType(); // vine din RDS
@@ -337,7 +319,6 @@ public class AllocationPlan {
             return cap;
         }
 
-        // fallback (dacă nu e implementat încă)
         for (JarType jt : JarType.values()) {
             int jarsCap = Math.max(0, stock.cratesFor(jt));
             if (jarsCap > 0) cap.put(jt, jarsCap);
@@ -345,8 +326,6 @@ public class AllocationPlan {
         log.debug("[cratesCapacityAsJars] FALLBACK capacityByJarType(jars)={}", cap);
         return cap;
     }
-
-    // ================== STATUS & CACHE ==================
 
     private void refreshStatus() {
         PlanStatus old = this.status;
@@ -379,7 +358,6 @@ public class AllocationPlan {
         log.debug("[recomputeAllocatedCache] allocatedCache={}", allocatedCache);
     }
 
-    // ================== UTILS ==================
 
     private static Map<HoneyType, BigDecimal> normalizeRequested(Map<HoneyType, BigDecimal> req) {
         if (req == null || req.isEmpty()) {

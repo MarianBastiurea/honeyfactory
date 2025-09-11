@@ -13,11 +13,7 @@ public interface PackagingResources {
     BigDecimal honeyFor(HoneyType type);
     int jarsFor(JarType type);
     int labelsFor(JarType type);
-
-    // moștenire / compatibilitate veche: întoarce capacitate în BORCANE pentru acel JarType
     int cratesFor(JarType type);
-
-    // NOU: dacă nu vrei să implementezi încă, returnează map gol
     default Map<CrateType, Integer> cratesByType() {
         return Collections.emptyMap();
     }

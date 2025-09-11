@@ -9,14 +9,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-public class PlanWithPrep {
+public record PlanWithPrep(AllocationPlan plan, Map<JarType, Integer> fulfilledJarQty, BigDecimal honeyKgUsed,
+                           List<PrepCommand> prepCommands) {
 
     private static final Logger log = LoggerFactory.getLogger(PlanWithPrep.class);
-
-    private final AllocationPlan plan;
-    private final Map<JarType, Integer> fulfilledJarQty;
-    private final BigDecimal honeyKgUsed;
-    private final List<PrepCommand> prepCommands;
 
     public PlanWithPrep(AllocationPlan plan,
                         Map<JarType, Integer> fulfilledJarQty,
@@ -26,8 +22,6 @@ public class PlanWithPrep {
         this.fulfilledJarQty = Map.copyOf(Objects.requireNonNull(fulfilledJarQty, "fulfilledJarQty"));
         this.honeyKgUsed = Objects.requireNonNull(honeyKgUsed, "honeyKgUsed");
         this.prepCommands = List.copyOf(Objects.requireNonNull(prepCommands, "prepCommands"));
-
-        // log de creare — concis, pe DEBUG
         int jarTypes = this.fulfilledJarQty.size();
         int totalJars = this.fulfilledJarQty.values().stream().mapToInt(Integer::intValue).sum();
         int cmds = this.prepCommands.size();
@@ -35,25 +29,6 @@ public class PlanWithPrep {
                 this.plan.getClass().getSimpleName(), jarTypes, totalJars, this.honeyKgUsed, cmds);
     }
 
-    public AllocationPlan getPlan() {
-        return plan;
-    }
-
-    public Map<JarType, Integer> getFulfilledJarQty() {
-        return fulfilledJarQty;
-    }
-
-    public BigDecimal getHoneyKgUsed() {
-        return honeyKgUsed;
-    }
-
-    public List<PrepCommand> getPrepCommands() {
-        return prepCommands;
-    }
-
-    /**
-     * Rezumat util pentru loguri (fără a lista toate colecțiile).
-     */
     public String summary() {
         int jarTypes = fulfilledJarQty.size();
         int totalJars = fulfilledJarQty.values().stream().mapToInt(Integer::intValue).sum();

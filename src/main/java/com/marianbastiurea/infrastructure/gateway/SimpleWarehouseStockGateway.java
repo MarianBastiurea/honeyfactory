@@ -9,12 +9,12 @@ import com.marianbastiurea.domain.repo.HoneyRepo;
 import com.marianbastiurea.domain.services.ReservationOrchestrator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import java.util.concurrent.StructuredTaskScope;
-import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.concurrent.StructuredTaskScope;
 
 @Component
 public class SimpleWarehouseStockGateway implements ReservationOrchestrator.WarehouseStockGateway {
@@ -22,6 +22,7 @@ public class SimpleWarehouseStockGateway implements ReservationOrchestrator.Ware
     private static final Logger log = LoggerFactory.getLogger(SimpleWarehouseStockGateway.class);
 
     private final HoneyRepo honey;
+
     public SimpleWarehouseStockGateway(@Qualifier("routerHoneyRepo") HoneyRepo honey) {
         this.honey = honey;
     }
@@ -38,13 +39,13 @@ public class SimpleWarehouseStockGateway implements ReservationOrchestrator.Ware
             }
         }
         LinkedHashMap<String, Map<HoneyType, BigDecimal>> out = new LinkedHashMap<>();
-        out.put("MAIN", stock); // o singură “magazie” pentru început
+        out.put("MAIN", stock);
         return out;
     }
 
     @Override
     public void reserve(String warehouseKey, HoneyType type, BigDecimal quantityKg) {
-        int technicalOrderNo = -1; // dacă nu ai orderNumber la îndemână aici
+        int technicalOrderNo = 1;
         var res = honey.processOrder(type, technicalOrderNo, quantityKg);
         if (res.deliveredKg().compareTo(quantityKg) < 0) {
             throw new IllegalStateException(
@@ -60,7 +61,7 @@ public class SimpleWarehouseStockGateway implements ReservationOrchestrator.Ware
         Objects.requireNonNull(plan, "plan");
         int orderNumber = plan.getOrderNumber();
 
-        // Colectăm liniile cu cantități > 0
+
         List<AllocationLine> lines = plan.getLines().stream()
                 .filter(l -> l.quantityKg() != null && l.quantityKg().signum() > 0)
                 .toList();
@@ -68,10 +69,6 @@ public class SimpleWarehouseStockGateway implements ReservationOrchestrator.Ware
         if (lines.isEmpty()) {
             return new ReserveResult(orderNumber, List.of(), BigDecimal.ZERO, BigDecimal.ZERO, true);
         }
-
-        // NOTĂ: pe JDK 21/23, constructorul fără parametri pornește subtask-urile ca virtual threads.
-        // Dacă build-ul tău suportă, poți folosi și varianta (comentată) cu factory explicit:
-        // try (var scope = new StructuredTaskScope.ShutdownOnFailure(Thread.ofVirtual().factory())) {
         try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
 
             List<StructuredTaskScope.Subtask<ReserveLineResult>> tasks = new ArrayList<>(lines.size());
@@ -95,7 +92,7 @@ public class SimpleWarehouseStockGateway implements ReservationOrchestrator.Ware
                 }));
             }
 
-            scope.join(); // așteaptă toate
+            scope.join();
             scope.throwIfFailed(ex -> new IllegalStateException(
                     "Honey reservation failed for order " + orderNumber, ex));
 

@@ -90,7 +90,6 @@ public class AllocationPlanner {
 
         AllocationPlan plan = AllocationPlan.of(orderNumber, requestedByType, lines);
 
-        // sumarizare rapidă pentru loguri
         EnumMap<HoneyType, BigDecimal> allocatedByType = new EnumMap<>(HoneyType.class);
         for (AllocationLine line : lines) {
             allocatedByType.merge(line.type(), line.quantityKg(), BigDecimal::add);
@@ -100,7 +99,6 @@ public class AllocationPlanner {
         log.info("Completed greedy allocation for order={} in {} ms | lines={} | allocatedByType={}",
                 orderNumber, elapsedMs, lines.size(), allocatedByType);
 
-        // semnalăm tipurile neacoperite (dacă există)
         for (Map.Entry<HoneyType, BigDecimal> req : requestedByType.entrySet()) {
             HoneyType type = req.getKey();
             BigDecimal requested = nz(req.getValue());
@@ -117,9 +115,7 @@ public class AllocationPlanner {
         return plan;
     }
 
-    /**
-     * Variantă “all-or-nothing”: dacă nu putem satisface 100% din cerere, întoarcem Optional.empty().
-     */
+
     public Optional<AllocationPlan> planAllOrNothing(
             int orderNumber,
             Map<HoneyType, BigDecimal> requestedByType,
@@ -140,7 +136,6 @@ public class AllocationPlanner {
         return Optional.of(planGreedy(orderNumber, requestedByType, stockByWarehouse));
     }
 
-    /** Verifică dacă totalul stocurilor pe tip acoperă integral cererea. */
     public boolean canFulfillAll(
             Map<HoneyType, BigDecimal> requestedByType,
             Map<String, Map<HoneyType, BigDecimal>> stockByWarehouse
@@ -172,7 +167,6 @@ public class AllocationPlanner {
         return true;
     }
 
-    // ---------- helpers ----------
     private static BigDecimal nz(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
     }
