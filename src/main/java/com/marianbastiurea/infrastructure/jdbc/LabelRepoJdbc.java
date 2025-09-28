@@ -103,7 +103,7 @@ public class LabelRepoJdbc implements LabelRepo {
 
     @Override
     public void deliveredLabels(Map<JarType, Integer> plan) {
-        deliveredLabels(-1, plan); // fallback (order necunoscut)
+        deliveredLabels(1, plan); // fallback (order necunoscut)
     }
 
 

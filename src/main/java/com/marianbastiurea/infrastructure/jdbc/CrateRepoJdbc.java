@@ -111,7 +111,7 @@ public class CrateRepoJdbc implements CrateRepo {
 
     @Override
     public void deliveredCrates(Map<JarType, Integer> plan) {
-        deliveredCrates(-1, plan);
+        deliveredCrates(1, plan);
     }
 
 }
