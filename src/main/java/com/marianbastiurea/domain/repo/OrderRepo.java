@@ -4,22 +4,21 @@ import com.marianbastiurea.domain.enums.HoneyType;
 import com.marianbastiurea.domain.enums.JarType;
 import com.marianbastiurea.domain.model.Order;
 
-import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 public interface OrderRepo {
-    void upsertOrderLines(Integer orderNumber, HoneyType honeyType, Map<JarType, Integer> jarQuantities);
+    List<Order> findByOrderNumber(Integer orderNumber);
 
-    Optional<Order> findByOrderNumber(Integer orderNumber);
-    Optional<Order> findByOrderNumberAndHoneyType(Integer orderNumber, HoneyType honeyType);
-    List<Order> findByHoneyType(HoneyType honeyType);
 
-    List<Order> loadPendingGrouped();
-    boolean tryMarkProcessing(int orderNumber, HoneyType type);
-    void markCompleted(int orderNumber, HoneyType type, BigDecimal deliveredKg);
-    void markFailed(int orderNumber, HoneyType type, String reason);
+    void logProcessingBatch(int orderNumber, List<ProcessingLogRow> rows);
 
-    void deleteByOrderNumber(Integer orderNumber);
+
+    default void insertProcessingLog(int orderNumber, HoneyType ht, JarType jt, int req, int del, String reason) {
+        logProcessingBatch(orderNumber, List.of(new ProcessingLogRow(ht, jt, req, del, reason)));
+    }
+
+    void insertProcessingLog(int orderNumber, JarType jt, int req, int del, String reason);
+
+    record ProcessingLogRow(HoneyType honeyType, JarType jarType, int requestedQty, int deliveredQty, String reason) {
+    }
 }

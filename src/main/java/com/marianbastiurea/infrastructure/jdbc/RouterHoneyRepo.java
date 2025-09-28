@@ -9,8 +9,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.support.rowset.SqlRowSet;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -30,21 +30,21 @@ public class RouterHoneyRepo implements HoneyRepo {
     private final int retryLimit;
 
     public RouterHoneyRepo(
-            @Qualifier("acaciaTpl")      NamedParameterJdbcTemplate acaciaTpl,
-            @Qualifier("rapeseedTpl")    NamedParameterJdbcTemplate rapeseedTpl,
-            @Qualifier("wildflowerTpl")  NamedParameterJdbcTemplate wildFlowerTpl,
-            @Qualifier("lindenTpl")      NamedParameterJdbcTemplate lindenTpl,
-            @Qualifier("sunflowerTpl")   NamedParameterJdbcTemplate sunFlowerTpl,
+            @Qualifier("acaciaTpl") NamedParameterJdbcTemplate acaciaTpl,
+            @Qualifier("rapeseedTpl") NamedParameterJdbcTemplate rapeseedTpl,
+            @Qualifier("wildflowerTpl") NamedParameterJdbcTemplate wildFlowerTpl,
+            @Qualifier("lindenTpl") NamedParameterJdbcTemplate lindenTpl,
+            @Qualifier("sunflowerTpl") NamedParameterJdbcTemplate sunFlowerTpl,
             @Qualifier("falseindigoTpl") NamedParameterJdbcTemplate falseIndigoTpl,
             @Value("${honey.repo.retries:5}") int retryLimit
     ) {
         this.retryLimit = retryLimit;
 
-        tplByType.put(HoneyType.ACACIA,       acaciaTpl);
-        tplByType.put(HoneyType.RAPESEED,     rapeseedTpl);
-        tplByType.put(HoneyType.WILDFLOWER,   wildFlowerTpl);
-        tplByType.put(HoneyType.LINDEN,       lindenTpl);
-        tplByType.put(HoneyType.SUNFLOWER,    sunFlowerTpl);
+        tplByType.put(HoneyType.ACACIA, acaciaTpl);
+        tplByType.put(HoneyType.RAPESEED, rapeseedTpl);
+        tplByType.put(HoneyType.WILDFLOWER, wildFlowerTpl);
+        tplByType.put(HoneyType.LINDEN, lindenTpl);
+        tplByType.put(HoneyType.SUNFLOWER, sunFlowerTpl);
         tplByType.put(HoneyType.FALSE_INDIGO, falseIndigoTpl);
 
         tplByType.forEach((type, tpl) -> {
@@ -52,20 +52,6 @@ public class RouterHoneyRepo implements HoneyRepo {
                     tpl.getJdbcTemplate().getDataSource(), "Missing DataSource for " + type);
             var tm = new DataSourceTransactionManager(ds);
             txByType.put(type, new TransactionTemplate(tm));
-
-            String dsInfo = ds.getClass().getSimpleName();
-            String poolName = tryReflect(ds, "getPoolName");
-            String jdbcUrl  = tryReflect(ds, "getJdbcUrl"); // DEBUG only; no secrets
-            if (log.isDebugEnabled()) {
-                log.debug("Router DS wired for {} -> {}{}{}",
-                        type,
-                        dsInfo,
-                        poolName != null ? (" pool=" + poolName) : "",
-                        jdbcUrl  != null ? (" url=" + jdbcUrl)   : ""
-                );
-            } else {
-                log.info("Router DS wired for {} -> {}", type, dsInfo);
-            }
         });
 
         log.info("RouterHoneyRepo initialized. retryLimit={}", this.retryLimit);
@@ -80,54 +66,62 @@ public class RouterHoneyRepo implements HoneyRepo {
     }
 
     @Override
-    public BigDecimal freeKg(HoneyType type) {
+    public BigDecimal availableKg(HoneyType type) {
         long t0 = System.nanoTime();
-        try {
-            BigDecimal v = tpl(type).getJdbcTemplate()
-                    .queryForObject("SELECT initial_stock FROM public.stock WHERE id = 1", BigDecimal.class);
-            if (v == null) v = BigDecimal.ZERO;
-            long tookMs = (System.nanoTime() - t0) / 1_000_000;
-            log.debug("[freeKg] {} -> {} kg ({} ms)", type, v, tookMs);
-            return v.max(BigDecimal.ZERO);
-        } catch (Exception ex) {
-            long tookMs = (System.nanoTime() - t0) / 1_000_000;
-            log.error("[freeKg] FAILED for {} in {} ms: {}", type, tookMs, ex.getMessage(), ex);
-            throw (ex instanceof RuntimeException) ? (RuntimeException) ex : new RuntimeException(ex);
-        }
+        BigDecimal v = tpl(type).getJdbcTemplate().queryForObject(
+                "SELECT COALESCE(final_stock,0) FROM public.stock WHERE id = 1", BigDecimal.class);
+
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     @Override
     public DeliveryResult processOrder(HoneyType type, int orderNumber, BigDecimal requestedKg) {
+        Objects.requireNonNull(type, "type");
         Objects.requireNonNull(requestedKg, "requestedKg");
         if (requestedKg.signum() < 0) throw new IllegalArgumentException("requestedKg must be >= 0");
-        log.info("[deliver/router] Start {} order#{} request={} kg (retryLimit={})",
-                type, orderNumber, requestedKg, retryLimit);
 
         for (int attempt = 1; attempt <= retryLimit; attempt++) {
-            long t0 = System.nanoTime();
             DeliveryResult result = tx(type).execute(status -> {
-                SqlRowSet rs = tpl(type).getJdbcTemplate()
-                        .queryForRowSet("SELECT initial_stock, row_version FROM public.stock WHERE id = 1");
-                if (!rs.next()) throw new IllegalStateException("Stock row missing (id=1)");
+                SqlRowSet rs = tpl(type).getJdbcTemplate().queryForRowSet(
+                        "SELECT initial_stock, COALESCE(final_stock,0) AS final_stock, " +
+                                "       COALESCE(delivered,0) AS delivered, row_version " +
+                                "FROM public.stock WHERE id = 1"
+                );
+                if (!rs.next()) {
+                    throw new IllegalStateException("Stock row missing (id=1)");
+                }
 
-                BigDecimal current = rs.getBigDecimal("initial_stock");
+                BigDecimal initial = rs.getBigDecimal("initial_stock");
+                BigDecimal freeNow = rs.getBigDecimal("final_stock");
+                BigDecimal deliveredNow = rs.getBigDecimal("delivered");
                 long version = rs.getLong("row_version");
-                if (current == null) current = BigDecimal.ZERO;
 
-                BigDecimal delivered = requestedKg.min(current);
-                BigDecimal newStock  = current.subtract(delivered);
+                if (initial == null) initial = BigDecimal.ZERO;
+                if (freeNow == null) freeNow = BigDecimal.ZERO;
+                if (deliveredNow == null) deliveredNow = BigDecimal.ZERO;
+
+                BigDecimal deliverNow = requestedKg.min(freeNow);
+                BigDecimal newDelivered = deliveredNow.add(deliverNow);
+
+                MapSqlParameterSource params = new MapSqlParameterSource()
+                        .addValue("orderedNow", requestedKg)
+                        .addValue("newDelivered", newDelivered)
+                        .addValue("oldVersion", version);
 
                 int updated = tpl(type).update(
                         "UPDATE public.stock " +
-                                "SET initial_stock = :newStock, row_version = row_version + 1, last_updated = NOW() " +
-                                "WHERE id = 1 AND row_version = :oldVersion",
-                        new MapSqlParameterSource()
-                                .addValue("newStock", newStock)
-                                .addValue("oldVersion", version)
+                                "SET ordered      = :orderedNow, " +
+                                "    delivered    = :newDelivered, " +
+                                "    row_version  = row_version + 1, " +
+                                "    last_updated = NOW() " +
+                                "WHERE id = 1 AND row_version = :oldVersion " +
+                                "  AND :newDelivered <= initial_stock",
+                        params
                 );
+
                 if (updated == 0) {
                     status.setRollbackOnly();
-                    return null; // optimistic lock conflict
+                    return null;
                 }
 
                 tpl(type).update(
@@ -135,38 +129,19 @@ public class RouterHoneyRepo implements HoneyRepo {
                                 "VALUES (:onum, :req, :del, 'DELIVER')",
                         new MapSqlParameterSource()
                                 .addValue("onum", orderNumber)
-                                .addValue("req",  requestedKg)
-                                .addValue("del",  delivered)
+                                .addValue("req", requestedKg)
+                                .addValue("del", deliverNow)
                 );
 
-                return new DeliveryResult(delivered, newStock, version + 1);
+                BigDecimal newFree = freeNow.subtract(deliverNow);
+                if (newFree.signum() < 0) newFree = BigDecimal.ZERO;
+
+                return new DeliveryResult(deliverNow, newFree, version + 1);
             });
 
-            long tookMs = (System.nanoTime() - t0) / 1_000_000;
-            if (result != null) {
-                log.info("[deliver/router] SUCCESS {} order#{} delivered={} kg, newStock={} kg, newVersion={}, attempt={}, {} ms",
-                        type, orderNumber, result.deliveredKg(), result.newStock(), result.newVersion(), attempt, tookMs);
-                return result;
-            } else {
-                log.warn("[deliver/router] Optimistic lock conflict for {} order#{} (attempt {} of {}). Retrying...",
-                        type, orderNumber, attempt, retryLimit);
-            }
+            if (result != null) return result;
         }
 
-        log.error("[deliver/router] FAILED {} order#{}: concurrent stock update, retry limit ({}) reached.",
-                type, orderNumber, retryLimit);
         throw new IllegalStateException("Concurrent stock update, retry limit reached for " + type);
-    }
-
-
-    private static String tryReflect(Object target, String getter) {
-        try {
-            var m = target.getClass().getMethod(getter);
-            m.setAccessible(true);
-            Object v = m.invoke(target);
-            return v != null ? String.valueOf(v) : null;
-        } catch (Exception ignored) {
-            return null;
-        }
     }
 }

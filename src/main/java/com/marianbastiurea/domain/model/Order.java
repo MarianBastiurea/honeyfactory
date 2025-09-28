@@ -6,5 +6,6 @@ import com.marianbastiurea.domain.enums.JarType;
 import java.util.Map;
 
 public record Order(HoneyType honeyType,
-                    Map<JarType, Integer> jarQuantities, Integer orderNumber) {
+                    Map<JarType, Integer> jarQuantities,
+                    Integer orderNumber) {
 }

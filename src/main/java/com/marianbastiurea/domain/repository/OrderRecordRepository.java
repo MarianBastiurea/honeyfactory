@@ -1,13 +1,14 @@
 package com.marianbastiurea.domain.repository;
 
+import com.marianbastiurea.domain.model.Order;
 import com.marianbastiurea.domain.model.OrderRecord;
 
-import java.util.List;
-import java.util.Optional;
-
 public interface OrderRecordRepository {
-    OrderRecord save(OrderRecord order);
-    Optional<OrderRecord> findById(String id);
-    List<OrderRecord> findByStatus(String status);
-    void deleteById(String id);
+
+    String save(Order order);
+
+
+    default String save(OrderRecord r) {
+        return save(new Order(r.honeyType(), r.jarQuantities(), r.orderNumber()));
+    }
 }

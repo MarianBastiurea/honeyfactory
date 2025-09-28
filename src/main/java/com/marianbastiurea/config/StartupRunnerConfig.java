@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -26,77 +27,115 @@ public class StartupRunnerConfig {
 
     private static final Logger log = LoggerFactory.getLogger(StartupRunnerConfig.class);
 
+
+    private static BigDecimal jarsToKg(Map<JarType, Integer> m) {
+        if (m == null || m.isEmpty()) return BigDecimal.ZERO;
+        BigDecimal sum = BigDecimal.ZERO;
+        for (var e : m.entrySet()) {
+            if (e.getKey() == null) continue;
+            int q = e.getValue() == null ? 0 : e.getValue();
+            if (q <= 0) continue;
+            sum = sum.add(e.getKey().kgPerJar().multiply(BigDecimal.valueOf(q)));
+        }
+        return sum.max(BigDecimal.ZERO);
+    }
+
+    private static String fmtJarBreakdown(Map<JarType, Integer> m) {
+        if (m == null || m.isEmpty()) return "(none)";
+        StringBuilder sb = new StringBuilder();
+        int total = 0;
+        BigDecimal totalKg = BigDecimal.ZERO;
+        for (JarType jt : JarType.values()) {
+            int q = m.getOrDefault(jt, 0);
+            if (q <= 0) continue;
+            BigDecimal kg = jt.kgPerJar().multiply(BigDecimal.valueOf(q));
+            sb.append(String.format("  - %-6s : qty=%-5d  kgPerJar=%-4s  kg=%s%n",
+                    jt.name(), q, jt.kgPerJar().toPlainString(), kg.toPlainString()));
+            total += q;
+            totalKg = totalKg.add(kg);
+        }
+        sb.append(String.format("  Σ jars=%d  Σ kg=%s", total, totalKg.toPlainString()));
+        return sb.toString();
+    }
+
     @Bean
     @ConditionalOnProperty(name = "app.process-orders-on-startup", havingValue = "true", matchIfMissing = false)
     CommandLineRunner runOnce(ReservationOrchestrator orchestrator,
                               @Qualifier("ordersTpl") NamedParameterJdbcTemplate ordersTpl,
                               OrderRecordRepository orderRecords) {
         return args -> {
-            log.info("Startup runner: processing orders from RDS is ENABLED (app.process-orders-on-startup=true).");
+            log.info("Startup runner enabled: app.process-orders-on-startup=true");
 
             final String sql = """
-                SELECT order_number, honey_type, jar_type, quantity
-                FROM public.orders
-            """;
-            log.debug("Executing SQL to fetch orders:\n{}", sql);
-
+                        SELECT order_number, honey_type, jar_type, quantity
+                          FROM public.orders
+                    """;
             long t0 = System.nanoTime();
             List<Map<String, Object>> rows = ordersTpl.getJdbcTemplate().queryForList(sql);
             long tFetch = System.nanoTime();
 
-            if (rows.isEmpty()) {
-                log.warn("No rows found in public.orders. Nothing to process.");
+            if (rows == null || rows.isEmpty()) {
                 return;
             }
-            log.info("Fetched {} order line(s) from public.orders in {} ms.",
-                    rows.size(), (tFetch - t0) / 1_000_000);
 
             Map<Integer, Map<HoneyType, Map<JarType, Integer>>> grouped = new LinkedHashMap<>();
-
             int skipped = 0;
+
             for (Map<String, Object> r : rows) {
                 try {
                     Integer ord = ((Number) r.get("order_number")).intValue();
                     HoneyType honey = HoneyType.valueOf(((String) r.get("honey_type")).trim());
                     JarType jar = JarType.valueOf(((String) r.get("jar_type")).trim());
-                    Integer qty = ((Number) r.get("quantity")).intValue();
+                    int qty = ((Number) r.get("quantity")).intValue();
+
+                    if (qty <= 0) {
+                        skipped++;
+                        continue;
+                    }
 
                     grouped
                             .computeIfAbsent(ord, k -> new EnumMap<>(HoneyType.class))
                             .computeIfAbsent(honey, k -> new EnumMap<>(JarType.class))
                             .merge(jar, qty, Integer::sum);
-
-                    log.trace("Grouped row -> order={}, honey={}, jar={}, qty={}", ord, honey, jar, qty);
                 } catch (Exception ex) {
                     skipped++;
-                    log.warn("Skipping invalid row {} due to parsing error: {}", r, ex.toString());
                 }
             }
+            long tGroup = System.nanoTime();
+            log.info("Grouping complete in {} ms. Skipped {} row(s).",
+                    (tGroup - tFetch) / 1_000_000, skipped);
 
-            int combos = grouped.values().stream().mapToInt(m -> m.size()).sum();
-            log.info("Grouping complete: {} order(s), {} (order+honey) combo(s). Skipped {} row(s).",
-                    grouped.size(), combos, skipped);
+            grouped.forEach((orderNo, perHoney) ->
+                    perHoney.forEach((honey, jarsMap) -> {
+                        int totalJars = jarsMap.values().stream().mapToInt(Integer::intValue).sum();
+                        BigDecimal totalKg = jarsToKg(jarsMap);
+                        log.info("[orders/agg] order#{} [{}] -> totalJars={} totalKg={}",
+                                orderNo, honey, totalJars, totalKg);
+                        log.info("[orders/agg] order#{} [{}] breakdown:\n{}",
+                                orderNo, honey, fmtJarBreakdown(jarsMap));
+                    })
+            );
 
-            int success = 0;
-            int failed = 0;
+            int success = 0, failed = 0;
 
             for (var ordEntry : grouped.entrySet()) {
                 Integer orderNumber = ordEntry.getKey();
+
                 for (var honeyEntry : ordEntry.getValue().entrySet()) {
                     HoneyType honey = honeyEntry.getKey();
                     Map<JarType, Integer> jarQuantities = honeyEntry.getValue();
-
-                    log.debug("Reserving for Order #{} [{}] with jars: {}", orderNumber, honey, jarQuantities);
                     Order order = new Order(honey, jarQuantities, orderNumber);
 
+                    long tOrch0 = System.nanoTime();
                     try {
                         var result = orchestrator.reserveFor(order);
+                        long tOrch1 = System.nanoTime();
 
                         OrderRecord.Status status = result.success()
                                 ? OrderRecord.Status.RESERVED
                                 : OrderRecord.Status.FAILED;
 
-                        OrderRecord record = new OrderRecord(
+                        orderRecords.save(new OrderRecord(
                                 null,
                                 orderNumber,
                                 honey,
@@ -104,21 +143,17 @@ public class StartupRunnerConfig {
                                 Instant.now(),
                                 status,
                                 result.message()
-                        );
-                        orderRecords.save(record);
+                        ));
 
                         if (result.success()) {
                             success++;
-                            log.info("Order #{} [{}] RESERVED: {}", orderNumber, honey, result.message());
                         } else {
                             failed++;
-                            log.warn("Order #{} [{}] FAILED: {}", orderNumber, honey, result.message());
                         }
                     } catch (Exception ex) {
                         failed++;
-                        log.error("Order #{} [{}] threw exception during reservation.", orderNumber, honey, ex);
                         try {
-                            OrderRecord record = new OrderRecord(
+                            orderRecords.save(new OrderRecord(
                                     null,
                                     orderNumber,
                                     honey,
@@ -126,15 +161,12 @@ public class StartupRunnerConfig {
                                     Instant.now(),
                                     OrderRecord.Status.FAILED,
                                     "EXCEPTION: " + ex.getMessage()
-                            );
-                            orderRecords.save(record);
+                            ));
                         } catch (Exception ignore) {
-                            log.warn("Could not persist FAILED record for order #{} [{}]: {}", orderNumber, honey, ignore.toString());
                         }
                     }
                 }
             }
-
             long tEnd = System.nanoTime();
             log.info("Startup runner finished in {} ms. Success={}, Failed={}.",
                     (tEnd - t0) / 1_000_000, success, failed);

@@ -15,6 +15,6 @@ public record OrderRecord(
         Status status,
         String note
 ) {
-    public enum Status { NEW, PROCESSING, DONE, CANCELED, RESERVED, FAILED }
+    public enum Status {NEW, PROCESSING, DONE, CANCELED, RESERVED, FAILED}
 }
 

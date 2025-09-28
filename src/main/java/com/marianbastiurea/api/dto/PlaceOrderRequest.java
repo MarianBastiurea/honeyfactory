@@ -9,4 +9,5 @@ public record PlaceOrderRequest(
         HoneyType honeyType,
         Map<JarType, Integer> jarQuantities,
         Integer orderNumber
-) {}
+) {
+}

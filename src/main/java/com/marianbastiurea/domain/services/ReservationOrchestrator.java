@@ -1,25 +1,25 @@
 package com.marianbastiurea.domain.services;
 
-import com.marianbastiurea.api.dto.ReserveResult;
-import com.marianbastiurea.domain.enums.HoneyType;
+import com.marianbastiurea.domain.enums.CrateType;
 import com.marianbastiurea.domain.enums.JarType;
-import com.marianbastiurea.domain.model.AllocationLine;
-import com.marianbastiurea.domain.model.AllocationPlan;
+import com.marianbastiurea.domain.enums.LabelType;
 import com.marianbastiurea.domain.model.Order;
+import com.marianbastiurea.domain.model.PackagingSnapshot;
+import com.marianbastiurea.domain.model.StockRow;
 import com.marianbastiurea.domain.repo.CrateRepo;
+import com.marianbastiurea.domain.repo.HoneyRepo;
 import com.marianbastiurea.domain.repo.JarRepo;
 import com.marianbastiurea.domain.repo.LabelRepo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.math.RoundingMode;
+import java.util.*;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.ThreadFactory;
 
@@ -30,9 +30,7 @@ public class ReservationOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(ReservationOrchestrator.class);
 
-    private final AllocationPlanner allocationPlanner;
-    private final WarehouseStockGateway stockGateway;
-
+    private final HoneyRepo honeyRepo;
     private final JarRepo jarRepo;
     private final CrateRepo crateRepo;
     private final LabelRepo labelRepo;
@@ -41,196 +39,319 @@ public class ReservationOrchestrator {
     private final TransactionTemplate cratesTT;
     private final TransactionTemplate labelsTT;
 
+    private final NamedParameterJdbcTemplate jarsTpl;
+    private final NamedParameterJdbcTemplate labelsTpl;
+    private final NamedParameterJdbcTemplate cratesTpl;
+
     private final ThreadFactory vtFactory;
 
-    public ReservationOrchestrator(AllocationPlanner allocationPlanner,
-                                   WarehouseStockGateway stockGateway,
+    public ReservationOrchestrator(@Qualifier("routerHoneyRepo") HoneyRepo honeyRepo,
                                    JarRepo jarRepo,
                                    CrateRepo crateRepo,
                                    LabelRepo labelRepo,
-                                   @Qualifier("jarsTT")   TransactionTemplate jarsTT,
+                                   @Qualifier("jarsTT") TransactionTemplate jarsTT,
                                    @Qualifier("cratesTT") TransactionTemplate cratesTT,
                                    @Qualifier("labelsTT") TransactionTemplate labelsTT,
+                                   @Qualifier("jarsTpl") NamedParameterJdbcTemplate jarsTpl,
+                                   @Qualifier("labelsTpl") NamedParameterJdbcTemplate labelsTpl,
+                                   @Qualifier("cratesTpl") NamedParameterJdbcTemplate cratesTpl,
                                    @Qualifier("vtThreadFactory") ThreadFactory vtFactory) {
-        this.allocationPlanner = requireNonNull(allocationPlanner, "allocationPlanner");
-        this.stockGateway = requireNonNull(stockGateway, "stockGateway");
+        this.honeyRepo = requireNonNull(honeyRepo, "honeyRepo");
         this.jarRepo = requireNonNull(jarRepo, "jarRepo");
         this.crateRepo = requireNonNull(crateRepo, "crateRepo");
         this.labelRepo = requireNonNull(labelRepo, "labelRepo");
         this.jarsTT = requireNonNull(jarsTT, "jarsTT");
         this.cratesTT = requireNonNull(cratesTT, "cratesTT");
         this.labelsTT = requireNonNull(labelsTT, "labelsTT");
+        this.jarsTpl = requireNonNull(jarsTpl, "jarsTpl");
+        this.labelsTpl = requireNonNull(labelsTpl, "labelsTpl");
+        this.cratesTpl = requireNonNull(cratesTpl, "cratesTpl");
         this.vtFactory = requireNonNull(vtFactory, "vtFactory");
     }
 
     public ReservationResult reserveFor(Order order) {
         requireNonNull(order, "order");
-
-        int jarTypes = order.jarQuantities() != null ? order.jarQuantities().size() : 0;
-        int totalJars = order.jarQuantities() == null ? 0 :
-                order.jarQuantities().values().stream().filter(v -> v != null && v > 0).mapToInt(Integer::intValue).sum();
-
-        log.info("[reserveFor] Start order#{} [{}]: jarTypes={}, totalJars={}",
-                order.orderNumber(), order.honeyType(), jarTypes, totalJars);
+        if (order.jarQuantities() == null || order.jarQuantities().isEmpty()) {
+            return ReservationResult.failure("Nu s-au cerut borcane pentru comanda #" + order.orderNumber());
+        }
 
         long t0 = System.nanoTime();
         try {
-            if (order.jarQuantities() == null || order.jarQuantities().isEmpty()) {
-                return ReservationResult.failure("Nu s-au specificat borcane pentru comanda #" + order.orderNumber());
-            }
-
-            BigDecimal totalKg = jarsToKg(order.jarQuantities());
-            log.debug("[reserveFor] Computed totalKg={} for order#{}", totalKg, order.orderNumber());
-
-            BigDecimal pkgCapKg;
-            try (var scope = new StructuredTaskScope.ShutdownOnFailure("pkg-cap", vtFactory)) {
-                var fJars   = scope.fork(() -> jarRepo.freeAsKg(order.jarQuantities(), order.honeyType()));
-                var fCrates = scope.fork(() -> crateRepo.freeAsKg(order.jarQuantities()));
-                var fLabels = scope.fork(() -> labelRepo.freeAsKg(order.jarQuantities()));
-
+            PackagingSnapshot snapshot;
+            BigDecimal honeyFreeKg;
+            try (var scope = new StructuredTaskScope.ShutdownOnFailure("load-inputs", vtFactory)) {
+                var fSnap = scope.fork(() -> loadPackagingSnapshotFor(order));
+                var fHoney = scope.fork(() -> nonNeg(honeyRepo.availableKg(order.honeyType())));
                 scope.join().throwIfFailed();
-
-                // ⬇️ înlocuiește .result() cu .get() (sau .resultNow())
-                var jarsCap   = fJars.get();     // sau fJars.resultNow()
-                var cratesCap = fCrates.get();   // sau fCrates.resultNow()
-                var labelsCap = fLabels.get();   // sau fLabels.resultNow()
-
-                pkgCapKg = min(jarsCap, cratesCap, labelsCap);
-                log.info("[reserveFor] Packaging caps kg -> jars={}, crates={}, labels={}, min={}",
-                        jarsCap, cratesCap, labelsCap, pkgCapKg);
+                snapshot = fSnap.get();
+                honeyFreeKg = fHoney.get();
             }
 
-            if (pkgCapKg.compareTo(totalKg) < 0) {
-                log.warn("[reserveFor] NOT ENOUGH PACKAGING for order#{}: needKg={}, haveKg={}",
-                        order.orderNumber(), totalKg, pkgCapKg);
-                return ReservationResult.failure("Ambalaje insuficiente (borcane/lăzi/etichete) pentru comanda #" + order.orderNumber());
+            BigDecimal needKg = jarsToKg(order.jarQuantities());
+            if (needKg.signum() <= 0) return ReservationResult.failure("No quantity.");
+
+            Caps caps = capsFromSnapshot(order, snapshot);
+            BigDecimal pkgCapKg = min(caps.jarsKg, caps.labelsKg, caps.cratesKg);
+
+            BigDecimal targetKg = min(needKg, honeyFreeKg, pkgCapKg);
+            if (targetKg.signum() <= 0) {
+                return ReservationResult.failure("Can't deliver nothing: need=" + needKg + ", honey=" + honeyFreeKg + ", pkg=" + pkgCapKg);
             }
 
-            long tLoad0 = System.nanoTime();
-            LinkedHashMap<String, Map<HoneyType, BigDecimal>> stockByWarehouse = loadStocksParallel();
-            long tLoadMs = (System.nanoTime() - tLoad0) / 1_000_000;
-            log.info("[reserveFor] Loaded stock from {} warehouse(s) in {} ms.", stockByWarehouse.size(), tLoadMs);
-
-            long tPlan0 = System.nanoTime();
-            Map<HoneyType, BigDecimal> requestedByType = Map.of(order.honeyType(), totalKg);
-            Optional<AllocationPlan> planOpt = allocationPlanner.planAllOrNothing(
-                    order.orderNumber(), requestedByType, stockByWarehouse);
-            long tPlanMs = (System.nanoTime() - tPlan0) / 1_000_000;
-
-            if (planOpt.isEmpty()) {
-                log.warn("[reserveFor] No feasible HONEY plan for order#{} [{}]. Planning took {} ms.",
-                        order.orderNumber(), order.honeyType(), tPlanMs);
-                return ReservationResult.failure("Stoc de miere insuficient pentru comanda #" + order.orderNumber());
+            Map<JarType, Integer> approvedJars = reduceJarsToTargetKg(order.jarQuantities(), targetKg);
+            BigDecimal approvedKg = jarsToKg(approvedJars);
+            if (approvedKg.signum() <= 0 || isZeroJars(approvedJars)) {
+                return ReservationResult.failure("No jars delivered (targetKg=" + targetKg + ").");
             }
 
-            AllocationPlan plan = planOpt.get();
-            log.info("[reserveFor] Plan READY for order#{}: lines={}, plannedKg={}; planning {} ms.",
-                    order.orderNumber(), plan.getLines().size(), totalReservedKg(plan), tPlanMs);
-            if (log.isTraceEnabled()) {
-                for (AllocationLine line : plan.getLines()) {
-                    log.trace("  line -> wh='{}', type={}, kg={}", line.warehouseKey(), line.type(), line.quantityKg());
+            var honeyRes = honeyRepo.processOrder(order.honeyType(), order.orderNumber(), approvedKg);
+            BigDecimal deliveredKg = nonNeg(honeyRes.deliveredKg());
+            if (deliveredKg.signum() <= 0) {
+                return ReservationResult.failure("No honey delivered (deliver=0).");
+            }
+
+
+            Map<JarType, Integer> planForDelivered = reduceJarsToTargetKg(approvedJars, deliveredKg);
+            BigDecimal packagingKg = jarsToKg(planForDelivered);
+            log.info("[deliver] PACKAGING PLAN (from honeyDelivered={}):\n{}", deliveredKg, fmtJarBreakdown(planForDelivered));
+
+
+            jarsTT.execute(s -> {
+                jarRepo.deliveredJars(planForDelivered);
+                return null;
+            });
+            labelsTT.execute(s -> {
+                labelRepo.deliveredLabels(planForDelivered);
+                return null;
+            });
+            cratesTT.execute(s -> {
+                crateRepo.deliveredCrates(planForDelivered);
+                return null;
+            });
+
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            int totalJarsDelivered = planForDelivered.values().stream().mapToInt(Integer::intValue).sum();
+            log.info("[deliver] ✅ SUCCESS order#{} [{}]: deliveredKg={}, jars={}, {} ms",
+                    order.orderNumber(), order.honeyType(), deliveredKg, totalJarsDelivered, ms);
+
+            return ReservationResult.success("Delivered " + deliveredKg + " kg (" + totalJarsDelivered + " borcane).");
+
+        } catch (Exception ex) {
+            long ms = (System.nanoTime() - t0) / 1_000_000;
+            log.error("[deliver] ❌ ERROR order#{} [{}] in {} ms. jars:\n{}",
+                    order.orderNumber(), order.honeyType(), ms, fmtJarBreakdown(order.jarQuantities()), ex);
+            return ReservationResult.failure("Error: " + ex.getMessage());
+        }
+    }
+
+
+    private PackagingSnapshot loadPackagingSnapshotFor(Order order) throws Exception {
+        Set<JarType> jarTypes = order.jarQuantities().keySet();
+        Set<LabelType> labelTypes = new HashSet<>();
+        Set<CrateType> crateTypes = new HashSet<>();
+        for (JarType jt : jarTypes) {
+            labelTypes.add(labelTypeFor(jt));
+            crateTypes.add(CrateType.forJarType(jt));
+        }
+
+        try (var scope = new StructuredTaskScope.ShutdownOnFailure("snap", vtFactory)) {
+            var fJars = scope.fork(() -> loadJarsStock(jarTypes));
+            var fLabels = scope.fork(() -> loadLabelsStock(labelTypes));
+            var fCrates = scope.fork(() -> loadCratesStock(crateTypes));
+            scope.join().throwIfFailed();
+            return new PackagingSnapshot(fJars.get(), fLabels.get(), fCrates.get());
+        }
+    }
+
+    private Map<JarType, StockRow> loadJarsStock(Set<JarType> types) {
+        if (types.isEmpty()) return Map.of();
+        String sql = """
+                    SELECT jar_type, COALESCE(final_stock,0) AS final_stock, row_version
+                    FROM public.jar_stock
+                    WHERE jar_type IN (:types)
+                """;
+        List<String> names = types.stream().map(Enum::name).toList();
+        return jarsTpl.query(sql, Map.of("types", names), rs -> {
+            EnumMap<JarType, StockRow> m = new EnumMap<>(JarType.class);
+            while (rs.next()) {
+                JarType jt = JarType.valueOf(rs.getString("jar_type"));
+                m.put(jt, new StockRow(rs.getLong("row_version"), Math.max(rs.getInt("final_stock"), 0)));
+            }
+            return m;
+        });
+    }
+
+    private Map<LabelType, StockRow> loadLabelsStock(Set<LabelType> types) {
+        if (types.isEmpty()) return Map.of();
+        String sql = """
+                    SELECT label_type, COALESCE(final_stock,0) AS final_stock, row_version
+                    FROM public.label_stock
+                    WHERE label_type IN (:types)
+                """;
+        List<String> names = types.stream().map(Enum::name).toList();
+        return labelsTpl.query(sql, Map.of("types", names), rs -> {
+            EnumMap<LabelType, StockRow> m = new EnumMap<>(LabelType.class);
+            while (rs.next()) {
+                LabelType lt = LabelType.valueOf(rs.getString("label_type"));
+                m.put(lt, new StockRow(rs.getLong("row_version"), Math.max(rs.getInt("final_stock"), 0)));
+            }
+            return m;
+        });
+    }
+
+    private Map<CrateType, StockRow> loadCratesStock(Set<CrateType> types) {
+        if (types.isEmpty()) return Map.of();
+        String sql = """
+                    SELECT crate_type, COALESCE(final_stock,0) AS final_stock, row_version
+                    FROM public.crate_stock
+                    WHERE crate_type IN (:types)
+                """;
+        List<String> names = types.stream().map(Enum::name).toList();
+        return cratesTpl.query(sql, Map.of("types", names), rs -> {
+            EnumMap<CrateType, StockRow> m = new EnumMap<>(CrateType.class);
+            while (rs.next()) {
+                CrateType ct = CrateType.valueOf(rs.getString("crate_type"));
+                m.put(ct, new StockRow(rs.getLong("row_version"), Math.max(rs.getInt("final_stock"), 0)));
+            }
+            return m;
+        });
+    }
+
+
+    private record Caps(BigDecimal jarsKg, BigDecimal labelsKg, BigDecimal cratesKg) {
+    }
+
+    private Caps capsFromSnapshot(Order order, PackagingSnapshot snap) {
+        Map<JarType, Integer> req = order.jarQuantities();
+
+        BigDecimal jarsKg = BigDecimal.ZERO;
+        BigDecimal labelsKg = BigDecimal.ZERO;
+        BigDecimal cratesKg = BigDecimal.ZERO;
+
+        for (var e : req.entrySet()) {
+            JarType jt = e.getKey();
+            int q = Math.max(0, e.getValue() == null ? 0 : e.getValue());
+
+            int jarsAvail = getFinal(snap.jars().get(jt));
+            int jarsCan = Math.min(q, jarsAvail);
+            jarsKg = jarsKg.add(jt.kgPerJar().multiply(BigDecimal.valueOf(jarsCan)));
+
+            LabelType lt = labelTypeFor(jt);
+            int labelsAvail = getFinal(snap.labels().get(lt));
+            int labelsCan = Math.min(q, labelsAvail);
+            labelsKg = labelsKg.add(jt.kgPerJar().multiply(BigDecimal.valueOf(labelsCan)));
+
+            CrateType ct = CrateType.forJarType(jt);
+            int cratesAvail = getFinal(snap.crates().get(ct));
+            int jarsSupportedByCrates = ct.jarsCapacityForCrates(cratesAvail);
+            int canFillJarsWithCrates = Math.min(q, jarsSupportedByCrates);
+            cratesKg = cratesKg.add(jt.kgPerJar().multiply(BigDecimal.valueOf(canFillJarsWithCrates)));
+        }
+        return new Caps(jarsKg, labelsKg, cratesKg);
+    }
+
+    private static int getFinal(StockRow r) {
+        return r == null ? 0 : Math.max(0, r.finalStock());
+    }
+
+    private static LabelType labelTypeFor(JarType jt) {
+        return switch (jt) {
+            case JAR200 -> LabelType.LABEL200;
+            case JAR400 -> LabelType.LABEL400;
+            case JAR800 -> LabelType.LABEL800;
+        };
+    }
+
+
+    public record ReservationResult(boolean success, String message) {
+        public static ReservationResult success(String m) {
+            return new ReservationResult(true, m);
+        }
+
+        public static ReservationResult failure(String m) {
+            return new ReservationResult(false, m);
+        }
+    }
+
+    private static BigDecimal nonNeg(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v.max(BigDecimal.ZERO);
+    }
+
+    private static BigDecimal min(BigDecimal... vs) {
+        BigDecimal m = vs[0];
+        for (int i = 1; i < vs.length; i++) if (vs[i].compareTo(m) < 0) m = vs[i];
+        return m;
+    }
+
+    private static BigDecimal jarsToKg(Map<JarType, Integer> jars) {
+        if (jars == null || jars.isEmpty()) return BigDecimal.ZERO;
+        BigDecimal sum = BigDecimal.ZERO;
+        for (var e : jars.entrySet()) {
+            int q = Math.max(0, e.getValue() == null ? 0 : e.getValue());
+            if (q == 0) continue;
+            sum = sum.add(e.getKey().kgPerJar().multiply(BigDecimal.valueOf(q)));
+        }
+        return sum;
+    }
+
+    private static Map<JarType, Integer> reduceJarsToTargetKg(Map<JarType, Integer> requested, BigDecimal targetKg) {
+        if (requested == null || requested.isEmpty() || targetKg == null || targetKg.signum() <= 0) return Map.of();
+
+        BigDecimal needKg = jarsToKg(requested);
+        if (needKg.signum() <= 0) return Map.of();
+
+        BigDecimal ratio = targetKg.divide(needKg, 12, RoundingMode.DOWN);
+        EnumMap<JarType, Integer> reduced = new EnumMap<>(JarType.class);
+        for (var e : requested.entrySet()) {
+            JarType jt = e.getKey();
+            int q = Math.max(0, e.getValue() == null ? 0 : e.getValue());
+            int scaled = ratio.signum() > 0
+                    ? new BigDecimal(q).multiply(ratio).setScale(0, RoundingMode.FLOOR).intValue()
+                    : 0;
+            reduced.put(jt, Math.min(scaled, q));
+        }
+
+        BigDecimal used = jarsToKg(reduced);
+        outer:
+        while (used.compareTo(targetKg) < 0) {
+            boolean progressed = false;
+            for (JarType jt : JarType.values()) {
+                int have = reduced.getOrDefault(jt, 0);
+                int maxAllowed = Math.max(0, requested.getOrDefault(jt, 0));
+                if (have >= maxAllowed) continue;
+                BigDecimal after = used.add(jt.kgPerJar());
+                if (after.compareTo(targetKg) <= 0) {
+                    reduced.put(jt, have + 1);
+                    used = after;
+                    progressed = true;
+                    if (used.compareTo(targetKg) >= 0) break outer;
                 }
             }
-
-            long tRes0 = System.nanoTime();
-            var jarsToReserve = order.jarQuantities();
-
-            try (var scope = new StructuredTaskScope.ShutdownOnFailure("reserve-all", vtFactory)) {
-                scope.fork(() -> jarsTT.execute(s -> { jarRepo.reserve(jarsToReserve); return null; }));
-                scope.fork(() -> cratesTT.execute(s -> { crateRepo.reserve(jarsToReserve); return null; }));
-                scope.fork(() -> labelsTT.execute(s -> { labelRepo.reserve(jarsToReserve); return null; }));
-
-                scope.fork(() -> {
-                    ReserveResult rr = stockGateway.reserve(plan);
-                    log.debug("[reserveFor] stockGateway.reserve(plan) -> {}", rr);
-                    return null;
-                });
-
-                scope.join().throwIfFailed();
-            }
-
-            long tResMs = (System.nanoTime() - tRes0) / 1_000_000;
-            long totalMs = (System.nanoTime() - t0) / 1_000_000;
-            log.info("[reserveFor] SUCCESS order#{} [{}]: total={} ms (load={} ms, plan={} ms, reserve={} ms).",
-                    order.orderNumber(), order.honeyType(), totalMs, tLoadMs, tPlanMs, tResMs);
-
-            return ReservationResult.success(plan, "Rezervare reușită pentru comanda #" + order.orderNumber());
-        } catch (Exception ex) {
-            long totalMs = (System.nanoTime() - t0) / 1_000_000;
-            log.error("[reserveFor] ERROR order#{} in {} ms: {}", order.orderNumber(), totalMs, ex.getMessage(), ex);
-            return ReservationResult.failure("Eroare la rezervare pentru comanda #" + order.orderNumber() + ": " + ex.getMessage());
+            if (!progressed) break;
         }
+        return reduced;
     }
 
-    private LinkedHashMap<String, Map<HoneyType, BigDecimal>> loadStocksParallel() throws Exception {
-        List<String> keys = stockGateway.warehouseKeys();
-        if (keys == null || keys.isEmpty()) {
-            log.warn("[loadStocksParallel] No warehouse keys provided. Falling back to single-call load.");
-            return stockGateway.loadAvailable();
-        }
-
-        log.debug("[loadStocksParallel] Loading {} warehouse(s) in parallel (virtual threads).", keys.size());
-        try (var scope = new StructuredTaskScope.ShutdownOnFailure("stock-load", vtFactory)) {
-            LinkedHashMap<String, StructuredTaskScope.Subtask<Map<HoneyType, BigDecimal>>> subs = new LinkedHashMap<>();
-            for (String k : keys) {
-                String key = k;
-                subs.put(key, scope.fork(() -> {
-                    Map<HoneyType, BigDecimal> m = stockGateway.loadAvailableFor(key);
-                    if (m == null) m = Map.of();
-                    log.trace("[loadStocksParallel] Loaded key='{}' types={}", key, m.size());
-                    return m;
-                }));
-            }
-            scope.join().throwIfFailed();
-
-            LinkedHashMap<String, Map<HoneyType, BigDecimal>> out = new LinkedHashMap<>();
-            for (String k : keys) {
-                out.put(k, subs.get(k).get());
-            }
-            log.debug("[loadStocksParallel] Done. Aggregated {} warehouse(s).", out.size());
-            return out;
-        }
+    private static boolean isZeroJars(Map<JarType, Integer> m) {
+        if (m == null || m.isEmpty()) return true;
+        return m.values().stream().mapToInt(v -> v == null ? 0 : v).sum() == 0;
     }
 
-    private static BigDecimal totalReservedKg(AllocationPlan plan) {
-        return plan.getLines().stream()
-                .map(AllocationLine::quantityKg)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private static BigDecimal jarsToKg(Map<JarType, Integer> jarQuantities) {
-        if (jarQuantities == null || jarQuantities.isEmpty()) return BigDecimal.ZERO;
-        return jarQuantities.entrySet().stream()
-                .filter(e -> e.getKey() != null && e.getValue() != null && e.getValue() > 0)
-                .map(e -> e.getKey().kgPerJar().multiply(BigDecimal.valueOf(e.getValue().longValue())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private static BigDecimal min(BigDecimal... values) {
-        BigDecimal m = null;
-        for (BigDecimal v : values) {
-            if (v == null) continue;
-            m = (m == null) ? v : (v.compareTo(m) < 0 ? v : m);
+    private static String fmtJarBreakdown(Map<JarType, Integer> m) {
+        if (m == null || m.isEmpty()) return "(none)";
+        StringBuilder sb = new StringBuilder();
+        int total = 0;
+        BigDecimal totalKg = BigDecimal.ZERO;
+        for (JarType jt : JarType.values()) {
+            int q = m.getOrDefault(jt, 0);
+            if (q <= 0) continue;
+            BigDecimal kg = jt.kgPerJar().multiply(BigDecimal.valueOf(q));
+            sb.append(String.format("  - %-6s : qty=%-5d  kgPerJar=%-4s  kg=%s%n",
+                    jt.name(), q, jt.kgPerJar().toPlainString(), kg.toPlainString()));
+            total += q;
+            totalKg = totalKg.add(kg);
         }
-        return m == null ? BigDecimal.ZERO : m;
-    }
-
-    public record ReservationResult(boolean success, String message, AllocationPlan plan) {
-        public static ReservationResult success(AllocationPlan plan, String message) {
-            return new ReservationResult(true, message, plan);
-        }
-        public static ReservationResult failure(String message) {
-            return new ReservationResult(false, message, null);
-        }
-    }
-
-    public interface WarehouseStockGateway {
-        LinkedHashMap<String, Map<HoneyType, BigDecimal>> loadAvailable();
-        default List<String> warehouseKeys() { return List.copyOf(loadAvailable().keySet()); }
-        default Map<HoneyType, BigDecimal> loadAvailableFor(String warehouseKey) {
-            return loadAvailable().getOrDefault(warehouseKey, Map.of());
-        }
-        void reserve(String warehouseKey, HoneyType type, BigDecimal quantityKg);
-        ReserveResult reserve(AllocationPlan plan);
+        sb.append(String.format("  Σ jars=%d  Σ kg=%s", total, totalKg.toPlainString()));
+        return sb.toString();
     }
 }

@@ -21,7 +21,6 @@ public class DynamoConfig {
 
     @Bean
     public AwsCredentialsProvider awsCredentialsProvider() {
-        log.debug("Creating AWS DefaultCredentialsProvider.");
         return DefaultCredentialsProvider.create();
     }
 
@@ -39,19 +38,16 @@ public class DynamoConfig {
 
         String endpointMsg = (endpointOverride == null || endpointOverride.isBlank()) ? "<none>" : endpointOverride;
         log.info("Building DynamoDbClient (region={}, endpointOverride={})", region, endpointMsg);
-        log.debug("Using AWS credentials provider: {}", creds.getClass().getName());
 
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
                 .region(region)
                 .credentialsProvider(creds);
 
         if (endpointOverride != null && !endpointOverride.isBlank()) {
-            log.warn("DynamoDB endpoint override is set (usually for Local/Dev): {}", endpointOverride);
             builder.endpointOverride(URI.create(endpointOverride));
         }
 
         DynamoDbClient client = builder.build();
-        log.debug("DynamoDbClient created: {}", client);
         return client;
     }
 
@@ -61,7 +57,7 @@ public class DynamoConfig {
         DynamoDbEnhancedClient enhanced = DynamoDbEnhancedClient.builder()
                 .dynamoDbClient(client)
                 .build();
-        log.debug("DynamoDbEnhancedClient created: {}", enhanced);
+        log.info("DynamoDbEnhancedClient created: {}", enhanced);
         return enhanced;
     }
 }

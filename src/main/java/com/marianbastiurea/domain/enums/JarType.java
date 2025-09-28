@@ -8,6 +8,12 @@ public enum JarType {
     JAR800(new BigDecimal("1"));
 
     private final BigDecimal kgPerJar;
-    JarType(BigDecimal kgPerJar) { this.kgPerJar = kgPerJar; }
-    public BigDecimal kgPerJar() { return kgPerJar; }
+
+    JarType(BigDecimal kgPerJar) {
+        this.kgPerJar = kgPerJar;
+    }
+
+    public BigDecimal kgPerJar() {
+        return kgPerJar;
+    }
 }

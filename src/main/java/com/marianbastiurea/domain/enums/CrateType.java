@@ -13,15 +13,6 @@ public enum CrateType {
         this.jarsPerCrate = jarsPerCrate;
     }
 
-    public JarType getJarType() {
-        return jarType;
-    }
-
-    public int getJarsPerCrate() {
-        return jarsPerCrate;
-    }
-
-
     public int cratesNeededForJars(int jarsCount) {
         return (int) Math.ceil(jarsCount / (double) jarsPerCrate);
     }
@@ -30,7 +21,6 @@ public enum CrateType {
     public int jarsCapacityForCrates(int cratesCount) {
         return cratesCount * jarsPerCrate;
     }
-
 
     public static CrateType forJarType(JarType jarType) {
         for (CrateType ct : values()) {
